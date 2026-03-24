@@ -1,0 +1,288 @@
+package provider
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"math"
+	"net/http"
+	"strconv"
+	"time"
+)
+
+const (
+	maxRetries = 3
+	baseDelay  = 500 * time.Millisecond
+)
+
+var ErrNotFound = errors.New("resource not found")
+
+type SporkClient struct {
+	BaseURL    string
+	APIKey     string
+	HTTPClient *http.Client
+	UserAgent  string
+}
+
+func NewSporkClient(baseURL, apiKey, version string) *SporkClient {
+	return &SporkClient{
+		BaseURL: baseURL,
+		APIKey:  apiKey,
+		HTTPClient: &http.Client{
+			Timeout: 30 * time.Second,
+		},
+		UserAgent: fmt.Sprintf("spork-terraform/%s", version),
+	}
+}
+
+// API model structs aligned with the REST API
+
+// Monitor matches the JSON shape returned by the REST API.
+type Monitor struct {
+	ID              string            `json:"id,omitempty"`
+	Name            string            `json:"name"`
+	Type            string            `json:"type"`
+	Target          string            `json:"target"`
+	Method          string            `json:"method,omitempty"`
+	ExpectedStatus  int               `json:"expected_status,omitempty"`
+	Interval        int               `json:"interval,omitempty"`
+	Timeout         int               `json:"timeout,omitempty"`
+	Regions         []string          `json:"regions,omitempty"`
+	Headers         map[string]string `json:"headers,omitempty"`
+	Body            string            `json:"body,omitempty"`
+	Keyword         string            `json:"keyword,omitempty"`
+	KeywordType     string            `json:"keyword_type,omitempty"`
+	SSLWarnDays     int               `json:"ssl_warn_days,omitempty"`
+	AlertChannelIDs []string          `json:"alert_channel_ids,omitempty"`
+	Tags            []string          `json:"tags,omitempty"`
+	Paused          bool              `json:"paused"`
+	Status          string            `json:"status,omitempty"`
+}
+
+// AlertChannel matches the JSON shape returned by the REST API.
+type AlertChannel struct {
+	ID       string            `json:"id,omitempty"`
+	Name     string            `json:"name"`
+	Type     string            `json:"type"`
+	Config   map[string]string `json:"config"`
+	Verified bool              `json:"verified,omitempty"`
+}
+
+// dataEnvelope is the standard API response wrapper: {"data": ...}
+type dataEnvelope struct {
+	Data json.RawMessage `json:"data"`
+}
+
+// listEnvelope is the standard API list response wrapper: {"data": [...], "meta": {...}}
+type listEnvelope struct {
+	Data json.RawMessage `json:"data"`
+	Meta struct {
+		Total   int `json:"total"`
+		Page    int `json:"page"`
+		PerPage int `json:"per_page"`
+	} `json:"meta"`
+}
+
+// apiErrorEnvelope matches the REST API error format: {"error": {"code": ..., "message": ...}}
+type apiErrorEnvelope struct {
+	Error struct {
+		Code    string `json:"code"`
+		Message string `json:"message"`
+	} `json:"error"`
+}
+
+func (c *SporkClient) doRequest(ctx context.Context, method, path string, body interface{}, result interface{}) error {
+	var jsonBytes []byte
+	if body != nil {
+		var err error
+		jsonBytes, err = json.Marshal(body)
+		if err != nil {
+			return fmt.Errorf("failed to marshal request body: %w", err)
+		}
+	}
+
+	url := c.BaseURL + path
+
+	var lastErr error
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		if attempt > 0 {
+			delay := time.Duration(math.Pow(2, float64(attempt-1))) * baseDelay
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(delay):
+			}
+		}
+
+		var reqBody io.Reader
+		if jsonBytes != nil {
+			reqBody = bytes.NewReader(jsonBytes)
+		}
+
+		req, err := http.NewRequestWithContext(ctx, method, url, reqBody)
+		if err != nil {
+			return fmt.Errorf("failed to create request: %w", err)
+		}
+
+		req.Header.Set("Authorization", "Bearer "+c.APIKey)
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("User-Agent", c.UserAgent)
+
+		resp, err := c.HTTPClient.Do(req)
+		if err != nil {
+			lastErr = fmt.Errorf("request failed: %w", err)
+			continue // retry on network errors
+		}
+
+		respBody, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			lastErr = fmt.Errorf("failed to read response body: %w", err)
+			continue
+		}
+
+		// Retry on transient server errors and rate limiting
+		if resp.StatusCode == http.StatusTooManyRequests ||
+			resp.StatusCode == http.StatusServiceUnavailable ||
+			resp.StatusCode == http.StatusGatewayTimeout {
+			// Respect Retry-After header if present
+			if retryAfter := resp.Header.Get("Retry-After"); retryAfter != "" {
+				if seconds, parseErr := strconv.Atoi(retryAfter); parseErr == nil {
+					select {
+					case <-ctx.Done():
+						return ctx.Err()
+					case <-time.After(time.Duration(seconds) * time.Second):
+					}
+				}
+			}
+			lastErr = fmt.Errorf("API error (HTTP %d): transient error, retrying", resp.StatusCode)
+			continue
+		}
+
+		return c.handleResponse(resp.StatusCode, respBody, result)
+	}
+
+	return fmt.Errorf("request failed after %d retries: %w", maxRetries, lastErr)
+}
+
+func (c *SporkClient) handleResponse(statusCode int, respBody []byte, result interface{}) error {
+	switch statusCode {
+	case http.StatusOK, http.StatusCreated:
+		// success — unwrap the {data: ...} envelope
+	case http.StatusNoContent:
+		return nil
+	case http.StatusNotFound:
+		return ErrNotFound
+	case http.StatusUnauthorized:
+		return fmt.Errorf(
+			"Spork API key is invalid or missing.\n\n" +
+				"Set your API key to authenticate with Spork:\n\n" +
+				"  export SPORK_API_KEY=\"your-api-key\"\n\n" +
+				"Don't have an account? Sign up free:\n" +
+				"  https://sporkops.com/signup?ref=terraform\n\n" +
+				"Generate an API key in the dashboard:\n" +
+				"  https://sporkops.com/settings/api-keys\n\n" +
+				"Docs: https://sporkops.com/docs")
+	case http.StatusPaymentRequired:
+		return fmt.Errorf(
+			"Payment method required.\n\n" +
+				"Add a payment method to start your 14-day free trial:\n" +
+				"  https://sporkops.com/billing?ref=terraform\n\n" +
+				"You won't be charged for 14 days. Plans start at $4/mo.")
+	case http.StatusForbidden:
+		return fmt.Errorf(
+			"Spork trial expired.\n\n" +
+				"Your 14-day trial has ended. Update your billing to continue:\n" +
+				"  https://sporkops.com/billing\n\n" +
+				"Plans start at $4/mo.")
+	default:
+		// Parse structured error: {"error": {"code": "...", "message": "..."}}
+		var apiErr apiErrorEnvelope
+		if json.Unmarshal(respBody, &apiErr) == nil && apiErr.Error.Message != "" {
+			return fmt.Errorf("API error (HTTP %d): %s", statusCode, apiErr.Error.Message)
+		}
+		return fmt.Errorf("API error (HTTP %d): %s", statusCode, string(respBody))
+	}
+
+	// Unwrap the {"data": ...} envelope before unmarshalling into result.
+	if result != nil && len(respBody) > 0 {
+		var envelope dataEnvelope
+		if err := json.Unmarshal(respBody, &envelope); err != nil {
+			return fmt.Errorf("failed to unmarshal response envelope: %w", err)
+		}
+		if err := json.Unmarshal(envelope.Data, result); err != nil {
+			return fmt.Errorf("failed to unmarshal response data: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// Monitor CRUD
+
+func (c *SporkClient) CreateMonitor(ctx context.Context, monitor Monitor) (*Monitor, error) {
+	var result Monitor
+	err := c.doRequest(ctx, http.MethodPost, "/monitors", monitor, &result)
+	if err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+func (c *SporkClient) GetMonitor(ctx context.Context, id string) (*Monitor, error) {
+	var result Monitor
+	err := c.doRequest(ctx, http.MethodGet, "/monitors/"+id, nil, &result)
+	if err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+func (c *SporkClient) UpdateMonitor(ctx context.Context, id string, monitor Monitor) (*Monitor, error) {
+	var result Monitor
+	err := c.doRequest(ctx, http.MethodPatch, "/monitors/"+id, monitor, &result)
+	if err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+func (c *SporkClient) DeleteMonitor(ctx context.Context, id string) error {
+	return c.doRequest(ctx, http.MethodDelete, "/monitors/"+id, nil, nil)
+}
+
+// AlertChannel CRUD — uses /alert-channels endpoint
+
+func (c *SporkClient) CreateAlertChannel(ctx context.Context, channel AlertChannel) (*AlertChannel, error) {
+	var result AlertChannel
+	err := c.doRequest(ctx, http.MethodPost, "/alert-channels", channel, &result)
+	if err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+func (c *SporkClient) GetAlertChannel(ctx context.Context, id string) (*AlertChannel, error) {
+	var result AlertChannel
+	err := c.doRequest(ctx, http.MethodGet, "/alert-channels/"+id, nil, &result)
+	if err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+func (c *SporkClient) UpdateAlertChannel(ctx context.Context, id string, channel AlertChannel) (*AlertChannel, error) {
+	var result AlertChannel
+	err := c.doRequest(ctx, http.MethodPut, "/alert-channels/"+id, channel, &result)
+	if err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+func (c *SporkClient) DeleteAlertChannel(ctx context.Context, id string) error {
+	return c.doRequest(ctx, http.MethodDelete, "/alert-channels/"+id, nil, nil)
+}
