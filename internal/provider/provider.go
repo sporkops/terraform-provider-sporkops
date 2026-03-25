@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 	"os"
+	"strings"
 
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/provider"
@@ -85,6 +86,14 @@ func (p *SporkProvider) Configure(ctx context.Context, req provider.ConfigureReq
 	baseURL := os.Getenv("SPORK_API_URL")
 	if baseURL == "" {
 		baseURL = "https://api.sporkops.com/v1"
+	}
+
+	if !strings.HasPrefix(baseURL, "https://") {
+		resp.Diagnostics.AddWarning(
+			"Insecure API URL",
+			"SPORK_API_URL does not use HTTPS. Your API key will be sent in cleartext. "+
+				"This is acceptable for local development but should not be used in production.",
+		)
 	}
 
 	client := NewSporkClient(baseURL, apiKey, p.version)

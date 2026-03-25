@@ -9,13 +9,17 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"net/url"
 	"strconv"
 	"time"
 )
 
 const (
-	maxRetries = 3
-	baseDelay  = 500 * time.Millisecond
+	maxRetries     = 3
+	baseDelay      = 500 * time.Millisecond
+	maxRetryAfter  = 60
+	maxResponseBody = 1 << 20 // 1 MB
+	maxErrorBodyLen = 200
 )
 
 var ErrNotFound = errors.New("resource not found")
@@ -137,7 +141,7 @@ func (c *SporkClient) doRequest(ctx context.Context, method, path string, body i
 			continue // retry on network errors
 		}
 
-		respBody, err := io.ReadAll(resp.Body)
+		respBody, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBody))
 		resp.Body.Close()
 		if err != nil {
 			lastErr = fmt.Errorf("failed to read response body: %w", err)
@@ -148,13 +152,18 @@ func (c *SporkClient) doRequest(ctx context.Context, method, path string, body i
 		if resp.StatusCode == http.StatusTooManyRequests ||
 			resp.StatusCode == http.StatusServiceUnavailable ||
 			resp.StatusCode == http.StatusGatewayTimeout {
-			// Respect Retry-After header if present
+			// Respect Retry-After header if present, capped to prevent unbounded sleep.
 			if retryAfter := resp.Header.Get("Retry-After"); retryAfter != "" {
 				if seconds, parseErr := strconv.Atoi(retryAfter); parseErr == nil {
-					select {
-					case <-ctx.Done():
-						return ctx.Err()
-					case <-time.After(time.Duration(seconds) * time.Second):
+					if seconds > maxRetryAfter {
+						seconds = maxRetryAfter
+					}
+					if seconds > 0 {
+						select {
+						case <-ctx.Done():
+							return ctx.Err()
+						case <-time.After(time.Duration(seconds) * time.Second):
+						}
 					}
 				}
 			}
@@ -204,7 +213,11 @@ func (c *SporkClient) handleResponse(statusCode int, respBody []byte, result int
 		if json.Unmarshal(respBody, &apiErr) == nil && apiErr.Error.Message != "" {
 			return fmt.Errorf("API error (HTTP %d): %s", statusCode, apiErr.Error.Message)
 		}
-		return fmt.Errorf("API error (HTTP %d): %s", statusCode, string(respBody))
+		body := string(respBody)
+		if len(body) > maxErrorBodyLen {
+			body = body[:maxErrorBodyLen] + "…"
+		}
+		return fmt.Errorf("API error (HTTP %d): %s", statusCode, body)
 	}
 
 	// Unwrap the {"data": ...} envelope before unmarshalling into result.
@@ -234,7 +247,7 @@ func (c *SporkClient) CreateMonitor(ctx context.Context, monitor Monitor) (*Moni
 
 func (c *SporkClient) GetMonitor(ctx context.Context, id string) (*Monitor, error) {
 	var result Monitor
-	err := c.doRequest(ctx, http.MethodGet, "/monitors/"+id, nil, &result)
+	err := c.doRequest(ctx, http.MethodGet, "/monitors/"+url.PathEscape(id), nil, &result)
 	if err != nil {
 		return nil, err
 	}
@@ -243,7 +256,7 @@ func (c *SporkClient) GetMonitor(ctx context.Context, id string) (*Monitor, erro
 
 func (c *SporkClient) UpdateMonitor(ctx context.Context, id string, monitor Monitor) (*Monitor, error) {
 	var result Monitor
-	err := c.doRequest(ctx, http.MethodPatch, "/monitors/"+id, monitor, &result)
+	err := c.doRequest(ctx, http.MethodPatch, "/monitors/"+url.PathEscape(id), monitor, &result)
 	if err != nil {
 		return nil, err
 	}
@@ -251,7 +264,7 @@ func (c *SporkClient) UpdateMonitor(ctx context.Context, id string, monitor Moni
 }
 
 func (c *SporkClient) DeleteMonitor(ctx context.Context, id string) error {
-	return c.doRequest(ctx, http.MethodDelete, "/monitors/"+id, nil, nil)
+	return c.doRequest(ctx, http.MethodDelete, "/monitors/"+url.PathEscape(id), nil, nil)
 }
 
 // AlertChannel CRUD — uses /alert-channels endpoint
@@ -267,7 +280,7 @@ func (c *SporkClient) CreateAlertChannel(ctx context.Context, channel AlertChann
 
 func (c *SporkClient) GetAlertChannel(ctx context.Context, id string) (*AlertChannel, error) {
 	var result AlertChannel
-	err := c.doRequest(ctx, http.MethodGet, "/alert-channels/"+id, nil, &result)
+	err := c.doRequest(ctx, http.MethodGet, "/alert-channels/"+url.PathEscape(id), nil, &result)
 	if err != nil {
 		return nil, err
 	}
@@ -276,7 +289,7 @@ func (c *SporkClient) GetAlertChannel(ctx context.Context, id string) (*AlertCha
 
 func (c *SporkClient) UpdateAlertChannel(ctx context.Context, id string, channel AlertChannel) (*AlertChannel, error) {
 	var result AlertChannel
-	err := c.doRequest(ctx, http.MethodPut, "/alert-channels/"+id, channel, &result)
+	err := c.doRequest(ctx, http.MethodPut, "/alert-channels/"+url.PathEscape(id), channel, &result)
 	if err != nil {
 		return nil, err
 	}
@@ -284,5 +297,5 @@ func (c *SporkClient) UpdateAlertChannel(ctx context.Context, id string, channel
 }
 
 func (c *SporkClient) DeleteAlertChannel(ctx context.Context, id string) error {
-	return c.doRequest(ctx, http.MethodDelete, "/alert-channels/"+id, nil, nil)
+	return c.doRequest(ctx, http.MethodDelete, "/alert-channels/"+url.PathEscape(id), nil, nil)
 }

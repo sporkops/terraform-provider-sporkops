@@ -74,6 +74,7 @@ func (r *AlertChannelResource) Schema(_ context.Context, _ resource.SchemaReques
 			},
 			"target": schema.StringAttribute{
 				Required:            true,
+				Sensitive:           true,
 				Description:         "The primary destination for the alert channel. For email: the email address. For webhook/slack/discord/teams/googlechat: the webhook URL. For pagerduty: the integration key. Not used for telegram (use bot_token and chat_id instead).",
 				MarkdownDescription: "The primary destination for the alert channel. For `email`: the email address. For `webhook`, `slack`, `discord`, `teams`, `googlechat`: the webhook URL. For `pagerduty`: the integration key. Ignored for `telegram` — use `bot_token` and `chat_id` instead.",
 			},
