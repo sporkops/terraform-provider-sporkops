@@ -113,5 +113,7 @@ func (p *SporkProvider) DataSources(_ context.Context) []func() datasource.DataS
 	return []func() datasource.DataSource{
 		NewMonitorDataSource,
 		NewAlertChannelDataSource,
+		NewMonitorsDataSource,
+		NewAlertChannelsDataSource,
 	}
 }
