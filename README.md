@@ -61,6 +61,10 @@ Generate an API key from the Spork dashboard at [sporkops.com/settings/api-keys]
 - [`spork_monitor`](docs/resources/monitor.md) — Manage uptime monitors
 - [`spork_alert_channel`](docs/resources/alert_channel.md) — Manage alert channels
 
+## Registry
+
+Manage published provider versions in the [Terraform Registry](https://app.terraform.io/app/sporkops/registry/public-namespaces/sporkops/providers).
+
 ## Development
 
 ### Building
