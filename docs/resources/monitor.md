@@ -50,7 +50,7 @@ resource "spork_monitor" "api" {
 - `type` (Optional, String) — Monitor type. One of: `http`, `ssl`, `dns`, `keyword`, `tcp`, `ping`. Default: `http`.
 - `method` (Optional, String) — HTTP method to use for checks. One of: `GET`, `HEAD`, `POST`, `PUT`. Default: `GET`.
 - `expected_status` (Optional, Number) — Expected HTTP status code (100-599). Default: `200`.
-- `interval` (Optional, Number) — Check interval in seconds (60-3600). Default: `60`.
+- `interval` (Optional, Number) — Check interval in seconds (60-86400, must be a multiple of 60). Default: `60`.
 - `timeout` (Optional, Number) — Timeout in seconds for each check (5-120). Default: `30`.
 - `regions` (Optional, List of String) — Regions to check from. Available: `us-central1`, `europe-west1`. Default: `["us-central1"]`.
 - `alert_channel_ids` (Optional, List of String) — IDs of alert channels to notify on status changes.
