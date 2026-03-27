@@ -189,6 +189,8 @@ func (r *MonitorResource) Schema(_ context.Context, _ resource.SchemaRequest, re
 			},
 			"keyword_type": schema.StringAttribute{
 				Optional:            true,
+				Computed:            true,
+				Default:             stringdefault.StaticString("exists"),
 				Description:         "Whether the keyword should exist or not exist in the response.",
 				MarkdownDescription: "Whether the keyword should `exists` or `not_exists` in the response.",
 				Validators: []validator.String{
@@ -197,6 +199,8 @@ func (r *MonitorResource) Schema(_ context.Context, _ resource.SchemaRequest, re
 			},
 			"ssl_warn_days": schema.Int64Attribute{
 				Optional:    true,
+				Computed:    true,
+				Default:     int64default.StaticInt64(14),
 				Description: "Number of days before SSL expiry to trigger a warning.",
 			},
 		},

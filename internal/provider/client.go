@@ -200,14 +200,14 @@ func (c *SporkClient) handleResponse(statusCode int, respBody []byte, result int
 				"Docs: https://sporkops.com/docs")
 	case http.StatusPaymentRequired:
 		return fmt.Errorf(
-			"Payment method required.\n\n" +
-				"Add a payment method to start your 14-day free trial:\n" +
+			"Subscription required.\n\n" +
+				"Subscribe to a plan to get started:\n" +
 				"  https://sporkops.com/billing?ref=terraform\n\n" +
-				"You won't be charged for 14 days. Plans start at $4/mo.")
+				"Plans start at $4/mo.")
 	case http.StatusForbidden:
 		return fmt.Errorf(
-			"Spork trial expired.\n\n" +
-				"Your 14-day trial has ended. Update your billing to continue:\n" +
+			"Subscription inactive.\n\n" +
+				"Subscribe or update your billing to continue:\n" +
 				"  https://sporkops.com/billing\n\n" +
 				"Plans start at $4/mo.")
 	default:
