@@ -75,7 +75,9 @@ type AlertChannel struct {
 	Type      string            `json:"type"`
 	Config    map[string]string `json:"config"`
 	Verified  bool              `json:"verified,omitempty"`
+	Secret    string            `json:"secret,omitempty"`
 	CreatedAt string            `json:"created_at,omitempty"`
+	UpdatedAt string            `json:"updated_at,omitempty"`
 }
 
 // dataEnvelope is the standard API response wrapper: {"data": ...}

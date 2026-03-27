@@ -122,10 +122,10 @@ func (r *MonitorResource) Schema(_ context.Context, _ resource.SchemaRequest, re
 				Optional:            true,
 				Computed:            true,
 				Default:             int64default.StaticInt64(60),
-				Description:         "Check interval in seconds (60-3600). Default: 60.",
-				MarkdownDescription: "Check interval in seconds (`60`-`3600`). Default: `60`.",
+				Description:         "Check interval in seconds (60-86400, must be a multiple of 60). Default: 60.",
+				MarkdownDescription: "Check interval in seconds (`60`-`86400`, must be a multiple of 60). Default: `60`.",
 				Validators: []validator.Int64{
-					int64validator.Between(60, 3600),
+					int64validator.Between(60, 86400),
 				},
 			},
 			"timeout": schema.Int64Attribute{
