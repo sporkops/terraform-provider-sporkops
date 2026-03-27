@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
@@ -49,20 +50,22 @@ func (d *MonitorDataSource) Metadata(_ context.Context, req datasource.MetadataR
 
 func (d *MonitorDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, resp *datasource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		Description:         "Fetches a Spork uptime monitor by ID.",
-		MarkdownDescription: "Fetches a [Spork](https://sporkops.com) uptime monitor by ID.",
+		Description:         "Fetches a Spork uptime monitor by ID or name.",
+		MarkdownDescription: "Fetches a [Spork](https://sporkops.com) uptime monitor by ID or name.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
-				Required:    true,
-				Description: "The unique identifier of the monitor.",
+				Optional:    true,
+				Computed:    true,
+				Description: "The unique identifier of the monitor. Specify either id or name.",
 			},
 			"target": schema.StringAttribute{
 				Computed:    true,
 				Description: "The URL being monitored.",
 			},
 			"name": schema.StringAttribute{
+				Optional:    true,
 				Computed:    true,
-				Description: "A human-readable name for the monitor.",
+				Description: "The name of the monitor. Specify either id or name.",
 			},
 			"type": schema.StringAttribute{
 				Computed:            true,
@@ -169,16 +172,50 @@ func (d *MonitorDataSource) Read(ctx context.Context, req datasource.ReadRequest
 		return
 	}
 
-	result, err := d.client.GetMonitor(ctx, config.ID.ValueString())
-	if err != nil {
-		if errors.Is(err, ErrNotFound) {
+	var result *Monitor
+
+	if !config.ID.IsNull() && config.ID.ValueString() != "" {
+		// Lookup by ID
+		r, err := d.client.GetMonitor(ctx, config.ID.ValueString())
+		if err != nil {
+			if errors.Is(err, ErrNotFound) {
+				resp.Diagnostics.AddError("Monitor Not Found", "No monitor found with ID: "+config.ID.ValueString())
+				return
+			}
+			resp.Diagnostics.AddError("Error reading monitor", err.Error())
+			return
+		}
+		result = r
+	} else if !config.Name.IsNull() && config.Name.ValueString() != "" {
+		// Lookup by name
+		monitors, err := d.client.ListMonitors(ctx)
+		if err != nil {
+			resp.Diagnostics.AddError("Error listing monitors", err.Error())
+			return
+		}
+		var matches []Monitor
+		for _, m := range monitors {
+			if m.Name == config.Name.ValueString() {
+				matches = append(matches, m)
+			}
+		}
+		if len(matches) == 0 {
+			resp.Diagnostics.AddError("Monitor Not Found", "No monitor found with name: "+config.Name.ValueString())
+			return
+		}
+		if len(matches) > 1 {
 			resp.Diagnostics.AddError(
-				"Monitor Not Found",
-				"No monitor found with ID: "+config.ID.ValueString(),
+				"Multiple Monitors Found",
+				fmt.Sprintf("Found %d monitors with name %q. Use id to specify the exact monitor.", len(matches), config.Name.ValueString()),
 			)
 			return
 		}
-		resp.Diagnostics.AddError("Error reading monitor", err.Error())
+		result = &matches[0]
+	} else {
+		resp.Diagnostics.AddError(
+			"Missing Required Attribute",
+			"Specify either id or name to look up a monitor.",
+		)
 		return
 	}
 

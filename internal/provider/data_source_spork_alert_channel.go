@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
@@ -35,16 +36,18 @@ func (d *AlertChannelDataSource) Metadata(_ context.Context, req datasource.Meta
 
 func (d *AlertChannelDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, resp *datasource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		Description:         "Fetches a Spork alert channel by ID.",
-		MarkdownDescription: "Fetches a [Spork](https://sporkops.com) alert channel by ID.",
+		Description:         "Fetches a Spork alert channel by ID or name.",
+		MarkdownDescription: "Fetches a [Spork](https://sporkops.com) alert channel by ID or name.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
-				Required:    true,
-				Description: "The unique identifier of the alert channel.",
+				Optional:    true,
+				Computed:    true,
+				Description: "The unique identifier of the alert channel. Specify either id or name.",
 			},
 			"name": schema.StringAttribute{
+				Optional:    true,
 				Computed:    true,
-				Description: "A friendly name for the alert channel.",
+				Description: "The name of the alert channel. Specify either id or name.",
 			},
 			"type": schema.StringAttribute{
 				Computed:            true,
@@ -92,16 +95,50 @@ func (d *AlertChannelDataSource) Read(ctx context.Context, req datasource.ReadRe
 		return
 	}
 
-	result, err := d.client.GetAlertChannel(ctx, config.ID.ValueString())
-	if err != nil {
-		if errors.Is(err, ErrNotFound) {
+	var result *AlertChannel
+
+	if !config.ID.IsNull() && config.ID.ValueString() != "" {
+		// Lookup by ID
+		r, err := d.client.GetAlertChannel(ctx, config.ID.ValueString())
+		if err != nil {
+			if errors.Is(err, ErrNotFound) {
+				resp.Diagnostics.AddError("Alert Channel Not Found", "No alert channel found with ID: "+config.ID.ValueString())
+				return
+			}
+			resp.Diagnostics.AddError("Error reading alert channel", err.Error())
+			return
+		}
+		result = r
+	} else if !config.Name.IsNull() && config.Name.ValueString() != "" {
+		// Lookup by name
+		channels, err := d.client.ListAlertChannels(ctx)
+		if err != nil {
+			resp.Diagnostics.AddError("Error listing alert channels", err.Error())
+			return
+		}
+		var matches []AlertChannel
+		for _, c := range channels {
+			if c.Name == config.Name.ValueString() {
+				matches = append(matches, c)
+			}
+		}
+		if len(matches) == 0 {
+			resp.Diagnostics.AddError("Alert Channel Not Found", "No alert channel found with name: "+config.Name.ValueString())
+			return
+		}
+		if len(matches) > 1 {
 			resp.Diagnostics.AddError(
-				"Alert Channel Not Found",
-				"No alert channel found with ID: "+config.ID.ValueString(),
+				"Multiple Alert Channels Found",
+				fmt.Sprintf("Found %d alert channels with name %q. Use id to specify the exact alert channel.", len(matches), config.Name.ValueString()),
 			)
 			return
 		}
-		resp.Diagnostics.AddError("Error reading alert channel", err.Error())
+		result = &matches[0]
+	} else {
+		resp.Diagnostics.AddError(
+			"Missing Required Attribute",
+			"Specify either id or name to look up an alert channel.",
+		)
 		return
 	}
 

@@ -21,9 +21,10 @@ import (
 )
 
 var (
-	_ resource.Resource                = &MonitorResource{}
-	_ resource.ResourceWithConfigure   = &MonitorResource{}
-	_ resource.ResourceWithImportState = &MonitorResource{}
+	_ resource.Resource                   = &MonitorResource{}
+	_ resource.ResourceWithConfigure      = &MonitorResource{}
+	_ resource.ResourceWithImportState    = &MonitorResource{}
+	_ resource.ResourceWithValidateConfig = &MonitorResource{}
 )
 
 type MonitorResource struct {
@@ -294,6 +295,52 @@ func (r *MonitorResource) Delete(ctx context.Context, req resource.DeleteRequest
 	err := r.client.DeleteMonitor(ctx, state.ID.ValueString())
 	if err != nil && !errors.Is(err, ErrNotFound) {
 		resp.Diagnostics.AddError("Error deleting monitor", err.Error())
+	}
+}
+
+func (r *MonitorResource) ValidateConfig(ctx context.Context, req resource.ValidateConfigRequest, resp *resource.ValidateConfigResponse) {
+	var config MonitorResourceModel
+	resp.Diagnostics.Append(req.Config.Get(ctx, &config)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	// Skip validation if type is unknown (e.g., from a variable)
+	if config.Type.IsUnknown() {
+		return
+	}
+
+	monType := config.Type.ValueString()
+
+	// keyword monitors require keyword and keyword_type
+	if monType == "keyword" {
+		if config.Keyword.IsNull() || config.Keyword.IsUnknown() {
+			resp.Diagnostics.AddAttributeError(
+				path.Root("keyword"),
+				"Missing Required Attribute",
+				"keyword is required when type is \"keyword\". "+
+					"Set keyword to the text to search for in the response body.",
+			)
+		}
+		if config.KeywordType.IsNull() || config.KeywordType.IsUnknown() {
+			resp.Diagnostics.AddAttributeError(
+				path.Root("keyword_type"),
+				"Missing Required Attribute",
+				"keyword_type is required when type is \"keyword\". "+
+					"Set keyword_type to \"exists\" or \"not_exists\".",
+			)
+		}
+	}
+
+	// Warn if keyword/keyword_type set on non-keyword monitors
+	if monType != "keyword" && monType != "" {
+		if !config.Keyword.IsNull() && !config.Keyword.IsUnknown() {
+			resp.Diagnostics.AddAttributeWarning(
+				path.Root("keyword"),
+				"Unnecessary Attribute",
+				"keyword is only used when type is \"keyword\". It will be ignored for type \""+monType+"\".",
+			)
+		}
 	}
 }
 

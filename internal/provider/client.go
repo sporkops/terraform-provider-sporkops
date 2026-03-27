@@ -302,3 +302,102 @@ func (c *SporkClient) UpdateAlertChannel(ctx context.Context, id string, channel
 func (c *SporkClient) DeleteAlertChannel(ctx context.Context, id string) error {
 	return c.doRequest(ctx, http.MethodDelete, "/alert-channels/"+url.PathEscape(id), nil, nil)
 }
+
+// doListRequest performs a GET request and unwraps the list envelope {"data": [...], "meta": {...}}.
+func (c *SporkClient) doListRequest(ctx context.Context, path string, result interface{}) error {
+	var jsonBytes []byte
+	url := c.BaseURL + path
+	_ = jsonBytes // suppress unused warning
+
+	var lastErr error
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		if attempt > 0 {
+			delay := time.Duration(math.Pow(2, float64(attempt-1))) * baseDelay
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(delay):
+			}
+		}
+
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+		if err != nil {
+			return fmt.Errorf("failed to create request: %w", err)
+		}
+
+		req.Header.Set("Authorization", "Bearer "+c.APIKey)
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("User-Agent", c.UserAgent)
+
+		resp, err := c.HTTPClient.Do(req)
+		if err != nil {
+			lastErr = fmt.Errorf("request failed: %w", err)
+			continue
+		}
+
+		respBody, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBody))
+		resp.Body.Close()
+		if err != nil {
+			lastErr = fmt.Errorf("failed to read response body: %w", err)
+			continue
+		}
+
+		if resp.StatusCode == http.StatusTooManyRequests ||
+			resp.StatusCode == http.StatusServiceUnavailable ||
+			resp.StatusCode == http.StatusGatewayTimeout {
+			if retryAfter := resp.Header.Get("Retry-After"); retryAfter != "" {
+				if seconds, parseErr := strconv.Atoi(retryAfter); parseErr == nil {
+					if seconds > maxRetryAfter {
+						seconds = maxRetryAfter
+					}
+					if seconds > 0 {
+						select {
+						case <-ctx.Done():
+							return ctx.Err()
+						case <-time.After(time.Duration(seconds) * time.Second):
+						}
+					}
+				}
+			}
+			lastErr = fmt.Errorf("API error (HTTP %d): transient error, retrying", resp.StatusCode)
+			continue
+		}
+
+		if resp.StatusCode >= 400 {
+			return c.handleResponse(resp.StatusCode, respBody, nil)
+		}
+
+		// Parse list envelope
+		if result != nil && len(respBody) > 0 {
+			var envelope listEnvelope
+			if err := json.Unmarshal(respBody, &envelope); err != nil {
+				return fmt.Errorf("failed to unmarshal response envelope: %w", err)
+			}
+			if err := json.Unmarshal(envelope.Data, result); err != nil {
+				return fmt.Errorf("failed to unmarshal response data: %w", err)
+			}
+		}
+		return nil
+	}
+	return fmt.Errorf("request failed after %d retries: %w", maxRetries, lastErr)
+}
+
+// ListMonitors returns all monitors for the authenticated user.
+func (c *SporkClient) ListMonitors(ctx context.Context) ([]Monitor, error) {
+	var result []Monitor
+	err := c.doListRequest(ctx, "/monitors?per_page=100", &result)
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+// ListAlertChannels returns all alert channels for the authenticated user.
+func (c *SporkClient) ListAlertChannels(ctx context.Context) ([]AlertChannel, error) {
+	var result []AlertChannel
+	err := c.doListRequest(ctx, "/alert-channels?per_page=100", &result)
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
+}
