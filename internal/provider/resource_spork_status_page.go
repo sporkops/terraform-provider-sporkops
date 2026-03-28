@@ -1,0 +1,443 @@
+package provider
+
+import (
+	"context"
+	"errors"
+	"regexp"
+
+	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
+	"github.com/hashicorp/terraform-plugin-framework/attr"
+	"github.com/hashicorp/terraform-plugin-framework/path"
+	"github.com/hashicorp/terraform-plugin-framework/resource"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringdefault"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
+	"github.com/hashicorp/terraform-plugin-framework/types"
+)
+
+var (
+	_ resource.Resource                = &StatusPageResource{}
+	_ resource.ResourceWithConfigure   = &StatusPageResource{}
+	_ resource.ResourceWithImportState = &StatusPageResource{}
+)
+
+type StatusPageResource struct {
+	client *SporkClient
+}
+
+type StatusPageResourceModel struct {
+	ID           types.String `tfsdk:"id"`
+	Name         types.String `tfsdk:"name"`
+	Slug         types.String `tfsdk:"slug"`
+	Components   types.List   `tfsdk:"components"`
+	CustomDomain types.String `tfsdk:"custom_domain"`
+	DomainStatus types.String `tfsdk:"domain_status"`
+	Theme        types.String `tfsdk:"theme"`
+	AccentColor  types.String `tfsdk:"accent_color"`
+	LogoURL      types.String `tfsdk:"logo_url"`
+	IsPublic     types.Bool   `tfsdk:"is_public"`
+	CreatedAt    types.String `tfsdk:"created_at"`
+	UpdatedAt    types.String `tfsdk:"updated_at"`
+}
+
+type StatusPageComponentModel struct {
+	ID          types.String `tfsdk:"id"`
+	MonitorID   types.String `tfsdk:"monitor_id"`
+	DisplayName types.String `tfsdk:"display_name"`
+	Description types.String `tfsdk:"description"`
+	Order       types.Int64  `tfsdk:"order"`
+}
+
+var componentAttrTypes = map[string]attr.Type{
+	"id":           types.StringType,
+	"monitor_id":   types.StringType,
+	"display_name": types.StringType,
+	"description":  types.StringType,
+	"order":        types.Int64Type,
+}
+
+func NewStatusPageResource() resource.Resource {
+	return &StatusPageResource{}
+}
+
+func (r *StatusPageResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
+	resp.TypeName = req.ProviderTypeName + "_status_page"
+}
+
+func (r *StatusPageResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
+	resp.Schema = schema.Schema{
+		Description:         "Manages a Spork status page.",
+		MarkdownDescription: "Manages a [Spork](https://sporkops.com) public status page with components, custom domains, and branding.",
+		Attributes: map[string]schema.Attribute{
+			"id": schema.StringAttribute{
+				Computed:    true,
+				Description: "The unique identifier of the status page.",
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.UseStateForUnknown(),
+				},
+			},
+			"name": schema.StringAttribute{
+				Required:    true,
+				Description: "The name of the status page (1-100 characters).",
+				Validators: []validator.String{
+					stringvalidator.LengthBetween(1, 100),
+				},
+			},
+			"slug": schema.StringAttribute{
+				Required:            true,
+				Description:         "URL-safe slug for the status page (2-63 lowercase alphanumeric characters or hyphens).",
+				MarkdownDescription: "URL-safe slug for the status page. Used in the URL: `https://<slug>.status.sporkops.com`. Must be 2-63 lowercase alphanumeric characters or hyphens.",
+				Validators: []validator.String{
+					stringvalidator.RegexMatches(
+						regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,61}[a-z0-9]$`),
+						"must be 2-63 lowercase alphanumeric characters or hyphens, cannot start or end with a hyphen",
+					),
+				},
+			},
+			"components": schema.ListNestedAttribute{
+				Optional:    true,
+				Description: "Components displayed on the status page. Each component maps a monitor to a display name.",
+				NestedObject: schema.NestedAttributeObject{
+					Attributes: map[string]schema.Attribute{
+						"id": schema.StringAttribute{
+							Computed:    true,
+							Description: "The unique identifier of the component.",
+							PlanModifiers: []planmodifier.String{
+								stringplanmodifier.UseStateForUnknown(),
+							},
+						},
+						"monitor_id": schema.StringAttribute{
+							Required:    true,
+							Description: "The ID of the monitor to display on the status page.",
+						},
+						"display_name": schema.StringAttribute{
+							Required:    true,
+							Description: "The display name shown on the status page for this component.",
+						},
+						"description": schema.StringAttribute{
+							Optional:    true,
+							Description: "A description of the component.",
+						},
+						"order": schema.Int64Attribute{
+							Optional:    true,
+							Computed:    true,
+							Description: "Display order of the component on the status page.",
+						},
+					},
+				},
+			},
+			"custom_domain": schema.StringAttribute{
+				Optional:            true,
+				Description:         "Custom domain for the status page.",
+				MarkdownDescription: "Custom domain for the status page (e.g. `status.example.com`). Requires a CNAME record pointing to `status.sporkops.com`.",
+			},
+			"domain_status": schema.StringAttribute{
+				Computed:            true,
+				Description:         "Verification status of the custom domain: pending, active, or failed.",
+				MarkdownDescription: "Verification status of the custom domain: `pending`, `active`, or `failed`.",
+			},
+			"theme": schema.StringAttribute{
+				Optional:            true,
+				Computed:            true,
+				Default:             stringdefault.StaticString("light"),
+				Description:         "Color theme for the status page. Default: light.",
+				MarkdownDescription: "Color theme for the status page. One of: `light`, `dark`. Default: `light`.",
+				Validators: []validator.String{
+					stringvalidator.OneOf("light", "dark"),
+				},
+			},
+			"accent_color": schema.StringAttribute{
+				Optional:            true,
+				Description:         "Accent color for the status page as a hex color (e.g. #ff0000).",
+				MarkdownDescription: "Accent color for the status page as a hex color (e.g. `#ff0000`).",
+				Validators: []validator.String{
+					stringvalidator.RegexMatches(
+						regexp.MustCompile(`^#[0-9a-fA-F]{6}$`),
+						"must be a hex color (e.g. #ff0000)",
+					),
+				},
+			},
+			"logo_url": schema.StringAttribute{
+				Optional:            true,
+				Description:         "URL of the logo to display on the status page. Must be an https:// URL.",
+				MarkdownDescription: "URL of the logo to display on the status page. Must be an `https://` URL.",
+				Validators: []validator.String{
+					stringvalidator.RegexMatches(
+						regexp.MustCompile(`^https://`),
+						"must be an https:// URL",
+					),
+				},
+			},
+			"is_public": schema.BoolAttribute{
+				Optional:    true,
+				Computed:    true,
+				Default:     booldefault.StaticBool(true),
+				Description: "Whether the status page is publicly accessible. Default: true.",
+			},
+			"created_at": schema.StringAttribute{
+				Computed:    true,
+				Description: "Timestamp when the status page was created.",
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.UseStateForUnknown(),
+				},
+			},
+			"updated_at": schema.StringAttribute{
+				Computed:    true,
+				Description: "Timestamp when the status page was last updated.",
+			},
+		},
+	}
+}
+
+func (r *StatusPageResource) Configure(_ context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
+	if req.ProviderData == nil {
+		return
+	}
+
+	client, ok := req.ProviderData.(*SporkClient)
+	if !ok {
+		resp.Diagnostics.AddError(
+			"Unexpected Resource Configure Type",
+			"Expected *SporkClient, got something else. Please report this issue to the provider developers.",
+		)
+		return
+	}
+
+	r.client = client
+}
+
+func (r *StatusPageResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
+	var plan StatusPageResourceModel
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	apiPage := statusPageFromModel(plan)
+
+	result, err := r.client.CreateStatusPage(ctx, apiPage)
+	if err != nil {
+		resp.Diagnostics.AddError("Error creating status page", err.Error())
+		return
+	}
+
+	// Save state immediately so the resource is tracked even if the
+	// custom domain call below fails (prevents orphaned resources).
+	state := statusPageToModel(*result)
+	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	// Set custom domain if specified
+	if !plan.CustomDomain.IsNull() && !plan.CustomDomain.IsUnknown() && plan.CustomDomain.ValueString() != "" {
+		err := r.client.SetCustomDomain(ctx, result.ID, plan.CustomDomain.ValueString())
+		if err != nil {
+			resp.Diagnostics.AddError("Error setting custom domain", err.Error())
+			return
+		}
+		// Re-read to get domain_status
+		result, err = r.client.GetStatusPage(ctx, result.ID)
+		if err != nil {
+			resp.Diagnostics.AddError("Error reading status page after setting custom domain", err.Error())
+			return
+		}
+		state = statusPageToModel(*result)
+		resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
+	}
+}
+
+func (r *StatusPageResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
+	var state StatusPageResourceModel
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	result, err := r.client.GetStatusPage(ctx, state.ID.ValueString())
+	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			resp.State.RemoveResource(ctx)
+			return
+		}
+		resp.Diagnostics.AddError("Error reading status page", err.Error())
+		return
+	}
+
+	newState := statusPageToModel(*result)
+	resp.Diagnostics.Append(resp.State.Set(ctx, &newState)...)
+}
+
+func (r *StatusPageResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
+	var plan StatusPageResourceModel
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	var state StatusPageResourceModel
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	apiPage := statusPageFromModel(plan)
+
+	result, err := r.client.UpdateStatusPage(ctx, state.ID.ValueString(), apiPage)
+	if err != nil {
+		resp.Diagnostics.AddError("Error updating status page", err.Error())
+		return
+	}
+
+	// Handle custom domain changes
+	oldDomain := state.CustomDomain.ValueString()
+	newDomain := plan.CustomDomain.ValueString()
+	if plan.CustomDomain.IsNull() {
+		newDomain = ""
+	}
+
+	if oldDomain != newDomain {
+		if oldDomain != "" && newDomain == "" {
+			// Remove custom domain
+			err := r.client.RemoveCustomDomain(ctx, result.ID)
+			if err != nil {
+				resp.Diagnostics.AddError("Error removing custom domain", err.Error())
+				return
+			}
+		} else if newDomain != "" {
+			// Set (or change) custom domain
+			err := r.client.SetCustomDomain(ctx, result.ID, newDomain)
+			if err != nil {
+				resp.Diagnostics.AddError("Error setting custom domain", err.Error())
+				return
+			}
+		}
+		// Re-read to get updated domain state
+		result, err = r.client.GetStatusPage(ctx, result.ID)
+		if err != nil {
+			resp.Diagnostics.AddError("Error reading status page after domain change", err.Error())
+			return
+		}
+	}
+
+	newState := statusPageToModel(*result)
+	resp.Diagnostics.Append(resp.State.Set(ctx, &newState)...)
+}
+
+func (r *StatusPageResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
+	var state StatusPageResourceModel
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	err := r.client.DeleteStatusPage(ctx, state.ID.ValueString())
+	if err != nil && !errors.Is(err, ErrNotFound) {
+		resp.Diagnostics.AddError("Error deleting status page", err.Error())
+	}
+}
+
+func (r *StatusPageResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
+	resource.ImportStatePassthroughID(ctx, path.Root("id"), req, resp)
+}
+
+// Conversion helpers
+
+func statusPageFromModel(model StatusPageResourceModel) StatusPage {
+	page := StatusPage{
+		Name:     model.Name.ValueString(),
+		Slug:     model.Slug.ValueString(),
+		Theme:    model.Theme.ValueString(),
+		IsPublic: model.IsPublic.ValueBool(),
+	}
+
+	if !model.AccentColor.IsNull() && !model.AccentColor.IsUnknown() {
+		page.AccentColor = model.AccentColor.ValueString()
+	}
+
+	if !model.LogoURL.IsNull() && !model.LogoURL.IsUnknown() {
+		page.LogoURL = model.LogoURL.ValueString()
+	}
+
+	if !model.Components.IsNull() && !model.Components.IsUnknown() {
+		var components []StatusPageComponentModel
+		model.Components.ElementsAs(context.Background(), &components, false)
+		for _, c := range components {
+			comp := StatusComponent{
+				MonitorID:   c.MonitorID.ValueString(),
+				DisplayName: c.DisplayName.ValueString(),
+				Order:       int(c.Order.ValueInt64()),
+			}
+			if !c.ID.IsNull() && !c.ID.IsUnknown() {
+				comp.ID = c.ID.ValueString()
+			}
+			if !c.Description.IsNull() && !c.Description.IsUnknown() {
+				comp.Description = c.Description.ValueString()
+			}
+			page.Components = append(page.Components, comp)
+		}
+	}
+
+	return page
+}
+
+func statusPageToModel(p StatusPage) StatusPageResourceModel {
+	model := StatusPageResourceModel{
+		ID:        types.StringValue(p.ID),
+		Name:      types.StringValue(p.Name),
+		Slug:      types.StringValue(p.Slug),
+		Theme:     types.StringValue(p.Theme),
+		IsPublic:  types.BoolValue(p.IsPublic),
+		CreatedAt: types.StringValue(p.CreatedAt),
+		UpdatedAt: types.StringValue(p.UpdatedAt),
+	}
+
+	// Custom domain
+	if p.CustomDomain != "" {
+		model.CustomDomain = types.StringValue(p.CustomDomain)
+		model.DomainStatus = types.StringValue(p.DomainStatus)
+	} else {
+		model.CustomDomain = types.StringNull()
+		model.DomainStatus = types.StringNull()
+	}
+
+	// Accent color
+	if p.AccentColor != "" {
+		model.AccentColor = types.StringValue(p.AccentColor)
+	} else {
+		model.AccentColor = types.StringNull()
+	}
+
+	// Logo URL
+	if p.LogoURL != "" {
+		model.LogoURL = types.StringValue(p.LogoURL)
+	} else {
+		model.LogoURL = types.StringNull()
+	}
+
+	// Components
+	if len(p.Components) > 0 {
+		var compValues []attr.Value
+		for _, c := range p.Components {
+			desc := types.StringNull()
+			if c.Description != "" {
+				desc = types.StringValue(c.Description)
+			}
+			compValues = append(compValues, types.ObjectValueMust(componentAttrTypes, map[string]attr.Value{
+				"id":           types.StringValue(c.ID),
+				"monitor_id":   types.StringValue(c.MonitorID),
+				"display_name": types.StringValue(c.DisplayName),
+				"description":  desc,
+				"order":        types.Int64Value(int64(c.Order)),
+			}))
+		}
+		model.Components = types.ListValueMust(types.ObjectType{AttrTypes: componentAttrTypes}, compValues)
+	} else {
+		model.Components = types.ListNull(types.ObjectType{AttrTypes: componentAttrTypes})
+	}
+
+	return model
+}

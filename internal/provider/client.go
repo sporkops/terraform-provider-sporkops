@@ -80,6 +80,31 @@ type AlertChannel struct {
 	UpdatedAt string            `json:"updated_at,omitempty"`
 }
 
+// StatusPage matches the JSON shape returned by the REST API.
+type StatusPage struct {
+	ID           string            `json:"id,omitempty"`
+	Name         string            `json:"name"`
+	Slug         string            `json:"slug"`
+	Components   []StatusComponent `json:"components,omitempty"`
+	CustomDomain string            `json:"custom_domain,omitempty"`
+	DomainStatus string            `json:"domain_status,omitempty"`
+	Theme        string            `json:"theme,omitempty"`
+	AccentColor  string            `json:"accent_color,omitempty"`
+	LogoURL      string            `json:"logo_url,omitempty"`
+	IsPublic     bool              `json:"is_public"`
+	CreatedAt    string            `json:"created_at,omitempty"`
+	UpdatedAt    string            `json:"updated_at,omitempty"`
+}
+
+// StatusComponent maps a monitor to a display name on a status page.
+type StatusComponent struct {
+	ID          string `json:"id,omitempty"`
+	MonitorID   string `json:"monitor_id"`
+	DisplayName string `json:"display_name"`
+	Description string `json:"description,omitempty"`
+	Order       int    `json:"order"`
+}
+
 // dataEnvelope is the standard API response wrapper: {"data": ...}
 type dataEnvelope struct {
 	Data json.RawMessage `json:"data"`
@@ -402,4 +427,57 @@ func (c *SporkClient) ListAlertChannels(ctx context.Context) ([]AlertChannel, er
 		return nil, err
 	}
 	return result, nil
+}
+
+// StatusPage CRUD
+
+func (c *SporkClient) CreateStatusPage(ctx context.Context, page StatusPage) (*StatusPage, error) {
+	var result StatusPage
+	err := c.doRequest(ctx, http.MethodPost, "/status-pages", page, &result)
+	if err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+func (c *SporkClient) GetStatusPage(ctx context.Context, id string) (*StatusPage, error) {
+	var result StatusPage
+	err := c.doRequest(ctx, http.MethodGet, "/status-pages/"+url.PathEscape(id), nil, &result)
+	if err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+func (c *SporkClient) UpdateStatusPage(ctx context.Context, id string, page StatusPage) (*StatusPage, error) {
+	var result StatusPage
+	err := c.doRequest(ctx, http.MethodPut, "/status-pages/"+url.PathEscape(id), page, &result)
+	if err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+func (c *SporkClient) DeleteStatusPage(ctx context.Context, id string) error {
+	return c.doRequest(ctx, http.MethodDelete, "/status-pages/"+url.PathEscape(id), nil, nil)
+}
+
+func (c *SporkClient) ListStatusPages(ctx context.Context) ([]StatusPage, error) {
+	var result []StatusPage
+	err := c.doListRequest(ctx, "/status-pages?per_page=100", &result)
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+// Custom domain management
+
+func (c *SporkClient) SetCustomDomain(ctx context.Context, statusPageID, domain string) error {
+	body := map[string]string{"domain": domain}
+	return c.doRequest(ctx, http.MethodPost, "/status-pages/"+url.PathEscape(statusPageID)+"/custom-domain", body, nil)
+}
+
+func (c *SporkClient) RemoveCustomDomain(ctx context.Context, statusPageID string) error {
+	return c.doRequest(ctx, http.MethodDelete, "/status-pages/"+url.PathEscape(statusPageID)+"/custom-domain", nil, nil)
 }
