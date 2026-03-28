@@ -109,3 +109,82 @@ resource "spork_status_page" "test" {
 		},
 	})
 }
+
+// Data source tests
+
+func TestAccStatusPageDataSource_byID(t *testing.T) {
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				Config: `
+resource "spork_status_page" "test" {
+  name = "DS Test Page"
+  slug = "tf-test-ds-id"
+}
+
+data "spork_status_page" "test" {
+  id = spork_status_page.test.id
+}
+`,
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("data.spork_status_page.test", "name", "DS Test Page"),
+					resource.TestCheckResourceAttr("data.spork_status_page.test", "slug", "tf-test-ds-id"),
+					resource.TestCheckResourceAttr("data.spork_status_page.test", "theme", "light"),
+					resource.TestCheckResourceAttr("data.spork_status_page.test", "is_public", "true"),
+				),
+			},
+		},
+	})
+}
+
+func TestAccStatusPageDataSource_byName(t *testing.T) {
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				Config: `
+resource "spork_status_page" "test" {
+  name = "DS Test By Name"
+  slug = "tf-test-ds-name"
+}
+
+data "spork_status_page" "test" {
+  name = spork_status_page.test.name
+}
+`,
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet("data.spork_status_page.test", "id"),
+					resource.TestCheckResourceAttr("data.spork_status_page.test", "name", "DS Test By Name"),
+					resource.TestCheckResourceAttr("data.spork_status_page.test", "slug", "tf-test-ds-name"),
+				),
+			},
+		},
+	})
+}
+
+func TestAccStatusPagesDataSource_list(t *testing.T) {
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				Config: `
+resource "spork_status_page" "test" {
+  name = "DS Test List"
+  slug = "tf-test-ds-list"
+}
+
+data "spork_status_pages" "all" {
+  depends_on = [spork_status_page.test]
+}
+`,
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet("data.spork_status_pages.all", "status_pages.#"),
+				),
+			},
+		},
+	})
+}

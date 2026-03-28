@@ -193,11 +193,11 @@ func (d *StatusPageDataSource) Read(ctx context.Context, req datasource.ReadRequ
 		return
 	}
 
-	state := statusPageToDataSourceModel(ctx, *result)
+	state := statusPageToDataSourceModel(*result)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 
-func statusPageToDataSourceModel(ctx context.Context, p StatusPage) StatusPageDataSourceModel {
+func statusPageToDataSourceModel(p StatusPage) StatusPageDataSourceModel {
 	model := StatusPageDataSourceModel{
 		ID:        types.StringValue(p.ID),
 		Name:      types.StringValue(p.Name),
@@ -212,40 +212,38 @@ func statusPageToDataSourceModel(ctx context.Context, p StatusPage) StatusPageDa
 		model.CustomDomain = types.StringValue(p.CustomDomain)
 		model.DomainStatus = types.StringValue(p.DomainStatus)
 	} else {
-		model.CustomDomain = types.StringValue("")
-		model.DomainStatus = types.StringValue("")
+		model.CustomDomain = types.StringNull()
+		model.DomainStatus = types.StringNull()
 	}
 
 	if p.AccentColor != "" {
 		model.AccentColor = types.StringValue(p.AccentColor)
 	} else {
-		model.AccentColor = types.StringValue("")
+		model.AccentColor = types.StringNull()
 	}
 
 	if p.LogoURL != "" {
 		model.LogoURL = types.StringValue(p.LogoURL)
 	} else {
-		model.LogoURL = types.StringValue("")
+		model.LogoURL = types.StringNull()
 	}
 
 	if len(p.Components) > 0 {
 		var compValues []attr.Value
 		for _, c := range p.Components {
-			desc := types.StringValue("")
+			desc := types.StringNull()
 			if c.Description != "" {
 				desc = types.StringValue(c.Description)
 			}
-			compObj, _ := types.ObjectValue(componentAttrTypes, map[string]attr.Value{
+			compValues = append(compValues, types.ObjectValueMust(componentAttrTypes, map[string]attr.Value{
 				"id":           types.StringValue(c.ID),
 				"monitor_id":   types.StringValue(c.MonitorID),
 				"display_name": types.StringValue(c.DisplayName),
 				"description":  desc,
 				"order":        types.Int64Value(int64(c.Order)),
-			})
-			compValues = append(compValues, compObj)
+			}))
 		}
-		compList, _ := types.ListValue(types.ObjectType{AttrTypes: componentAttrTypes}, compValues)
-		model.Components = compList
+		model.Components = types.ListValueMust(types.ObjectType{AttrTypes: componentAttrTypes}, compValues)
 	} else {
 		model.Components = types.ListValueMust(types.ObjectType{AttrTypes: componentAttrTypes}, []attr.Value{})
 	}

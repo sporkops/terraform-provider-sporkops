@@ -82,6 +82,9 @@ func (r *StatusPageResource) Schema(_ context.Context, _ resource.SchemaRequest,
 			"name": schema.StringAttribute{
 				Required:    true,
 				Description: "The name of the status page (1-100 characters).",
+				Validators: []validator.String{
+					stringvalidator.LengthBetween(1, 100),
+				},
 			},
 			"slug": schema.StringAttribute{
 				Required:            true,
@@ -213,11 +216,19 @@ func (r *StatusPageResource) Create(ctx context.Context, req resource.CreateRequ
 		return
 	}
 
-	apiPage := statusPageFromModel(ctx, plan)
+	apiPage := statusPageFromModel(plan)
 
 	result, err := r.client.CreateStatusPage(ctx, apiPage)
 	if err != nil {
 		resp.Diagnostics.AddError("Error creating status page", err.Error())
+		return
+	}
+
+	// Save state immediately so the resource is tracked even if the
+	// custom domain call below fails (prevents orphaned resources).
+	state := statusPageToModel(*result)
+	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
+	if resp.Diagnostics.HasError() {
 		return
 	}
 
@@ -234,10 +245,9 @@ func (r *StatusPageResource) Create(ctx context.Context, req resource.CreateRequ
 			resp.Diagnostics.AddError("Error reading status page after setting custom domain", err.Error())
 			return
 		}
+		state = statusPageToModel(*result)
+		resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 	}
-
-	state := statusPageToModel(ctx, *result)
-	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 
 func (r *StatusPageResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
@@ -257,7 +267,7 @@ func (r *StatusPageResource) Read(ctx context.Context, req resource.ReadRequest,
 		return
 	}
 
-	newState := statusPageToModel(ctx, *result)
+	newState := statusPageToModel(*result)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &newState)...)
 }
 
@@ -274,7 +284,7 @@ func (r *StatusPageResource) Update(ctx context.Context, req resource.UpdateRequ
 		return
 	}
 
-	apiPage := statusPageFromModel(ctx, plan)
+	apiPage := statusPageFromModel(plan)
 
 	result, err := r.client.UpdateStatusPage(ctx, state.ID.ValueString(), apiPage)
 	if err != nil {
@@ -313,7 +323,7 @@ func (r *StatusPageResource) Update(ctx context.Context, req resource.UpdateRequ
 		}
 	}
 
-	newState := statusPageToModel(ctx, *result)
+	newState := statusPageToModel(*result)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &newState)...)
 }
 
@@ -336,12 +346,11 @@ func (r *StatusPageResource) ImportState(ctx context.Context, req resource.Impor
 
 // Conversion helpers
 
-func statusPageFromModel(ctx context.Context, model StatusPageResourceModel) StatusPage {
+func statusPageFromModel(model StatusPageResourceModel) StatusPage {
 	page := StatusPage{
 		Name:     model.Name.ValueString(),
 		Slug:     model.Slug.ValueString(),
 		Theme:    model.Theme.ValueString(),
-		LogoURL:  model.LogoURL.ValueString(),
 		IsPublic: model.IsPublic.ValueBool(),
 	}
 
@@ -349,9 +358,13 @@ func statusPageFromModel(ctx context.Context, model StatusPageResourceModel) Sta
 		page.AccentColor = model.AccentColor.ValueString()
 	}
 
+	if !model.LogoURL.IsNull() && !model.LogoURL.IsUnknown() {
+		page.LogoURL = model.LogoURL.ValueString()
+	}
+
 	if !model.Components.IsNull() && !model.Components.IsUnknown() {
 		var components []StatusPageComponentModel
-		model.Components.ElementsAs(ctx, &components, false)
+		model.Components.ElementsAs(context.Background(), &components, false)
 		for _, c := range components {
 			comp := StatusComponent{
 				MonitorID:   c.MonitorID.ValueString(),
@@ -371,7 +384,7 @@ func statusPageFromModel(ctx context.Context, model StatusPageResourceModel) Sta
 	return page
 }
 
-func statusPageToModel(ctx context.Context, p StatusPage) StatusPageResourceModel {
+func statusPageToModel(p StatusPage) StatusPageResourceModel {
 	model := StatusPageResourceModel{
 		ID:        types.StringValue(p.ID),
 		Name:      types.StringValue(p.Name),
@@ -413,17 +426,15 @@ func statusPageToModel(ctx context.Context, p StatusPage) StatusPageResourceMode
 			if c.Description != "" {
 				desc = types.StringValue(c.Description)
 			}
-			compObj, _ := types.ObjectValue(componentAttrTypes, map[string]attr.Value{
+			compValues = append(compValues, types.ObjectValueMust(componentAttrTypes, map[string]attr.Value{
 				"id":           types.StringValue(c.ID),
 				"monitor_id":   types.StringValue(c.MonitorID),
 				"display_name": types.StringValue(c.DisplayName),
 				"description":  desc,
 				"order":        types.Int64Value(int64(c.Order)),
-			})
-			compValues = append(compValues, compObj)
+			}))
 		}
-		compList, _ := types.ListValue(types.ObjectType{AttrTypes: componentAttrTypes}, compValues)
-		model.Components = compList
+		model.Components = types.ListValueMust(types.ObjectType{AttrTypes: componentAttrTypes}, compValues)
 	} else {
 		model.Components = types.ListNull(types.ObjectType{AttrTypes: componentAttrTypes})
 	}

@@ -141,7 +141,7 @@ func (d *StatusPagesDataSource) Read(ctx context.Context, req datasource.ReadReq
 
 	var results []StatusPageDataSourceModel
 	for _, p := range pages {
-		results = append(results, statusPageToDataSourceModel(ctx, p))
+		results = append(results, statusPageToDataSourceModel(p))
 	}
 
 	if results == nil {
