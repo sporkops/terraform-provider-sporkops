@@ -1,11 +1,32 @@
 # Terraform Provider for Spork
 
-The Spork Terraform provider allows you to manage [Spork](https://sporkops.com) uptime monitors and alert channels as infrastructure-as-code.
+[![Tests](https://github.com/sporkops/terraform-provider-sporkops/actions/workflows/test.yml/badge.svg)](https://github.com/sporkops/terraform-provider-sporkops/actions/workflows/test.yml)
+[![Release](https://img.shields.io/github/v/release/sporkops/terraform-provider-sporkops)](https://github.com/sporkops/terraform-provider-sporkops/releases/latest)
+[![Terraform Registry](https://img.shields.io/badge/Terraform-Registry-purple.svg)](https://registry.terraform.io/providers/sporkops/sporkops/latest)
+[![License: MPL-2.0](https://img.shields.io/badge/License-MPL--2.0-blue.svg)](LICENSE)
+
+**Know when your site goes down before your customers do.**
+
+Add uptime monitoring to your Terraform workflow. One resource block, real alerts.
+
+## Quickstart
+
+```hcl
+resource "spork_monitor" "website" {
+  target   = "https://yoursite.com"
+  interval = 60
+}
+```
+
+```sh
+export SPORK_API_KEY="your-api-key"   # get one free at sporkops.com
+terraform init && terraform apply
+```
 
 ## Requirements
 
 - [Terraform](https://www.terraform.io/downloads) >= 1.0
-- [Go](https://go.dev/dl/) >= 1.22 (for building from source)
+- A Spork account ([sign up free](https://sporkops.com))
 
 ## Usage
 
@@ -61,9 +82,20 @@ Generate an API key from the Spork dashboard at [sporkops.com/settings/api-keys]
 - [`spork_monitor`](docs/resources/monitor.md) — Manage uptime monitors
 - [`spork_alert_channel`](docs/resources/alert_channel.md) — Manage alert channels
 
-## Registry
+## Data Sources
 
-Manage published provider versions in the [Terraform Registry](https://app.terraform.io/app/sporkops/registry/public-namespaces/sporkops/providers).
+- [`spork_monitor`](docs/data-sources/monitor.md) — Read a monitor
+- [`spork_monitors`](docs/data-sources/monitors.md) — List all monitors
+- [`spork_alert_channel`](docs/data-sources/alert_channel.md) — Read an alert channel
+- [`spork_alert_channels`](docs/data-sources/alert_channels.md) — List all alert channels
+
+## Prefer the CLI?
+
+Install the [Spork CLI](https://github.com/sporkops/cli) for interactive terminal-based monitoring:
+
+```sh
+brew install sporkops/tap/spork && spork login && spork ping add https://yoursite.com
+```
 
 ## Development
 
@@ -74,8 +106,6 @@ go build ./...
 ```
 
 ### Running Acceptance Tests
-
-Acceptance tests require a valid API key and create real resources:
 
 ```shell
 export SPORK_API_KEY="your-api-key-here"
@@ -88,7 +118,9 @@ TF_ACC=1 go test ./internal/provider/ -v -tags=acceptance -timeout 120m
 make install
 ```
 
-This builds the provider and installs it to `~/.terraform.d/plugins/` for local development.
+---
+
+**Free to start. No credit card required.** [Sign up at sporkops.com →](https://sporkops.com)
 
 ## License
 
