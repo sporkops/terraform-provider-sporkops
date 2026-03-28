@@ -80,6 +80,31 @@ type AlertChannel struct {
 	UpdatedAt string            `json:"updated_at,omitempty"`
 }
 
+// StatusPage matches the JSON shape returned by the REST API.
+type StatusPage struct {
+	ID           string            `json:"id,omitempty"`
+	Name         string            `json:"name"`
+	Slug         string            `json:"slug"`
+	Components   []StatusComponent `json:"components,omitempty"`
+	CustomDomain string            `json:"custom_domain,omitempty"`
+	DomainStatus string            `json:"domain_status,omitempty"`
+	Theme        string            `json:"theme,omitempty"`
+	AccentColor  string            `json:"accent_color,omitempty"`
+	LogoURL      string            `json:"logo_url,omitempty"`
+	IsPublic     bool              `json:"is_public"`
+	CreatedAt    string            `json:"created_at,omitempty"`
+	UpdatedAt    string            `json:"updated_at,omitempty"`
+}
+
+// StatusComponent maps a monitor to a display name on a status page.
+type StatusComponent struct {
+	ID          string `json:"id,omitempty"`
+	MonitorID   string `json:"monitor_id"`
+	DisplayName string `json:"display_name"`
+	Description string `json:"description,omitempty"`
+	Order       int    `json:"order"`
+}
+
 // dataEnvelope is the standard API response wrapper: {"data": ...}
 type dataEnvelope struct {
 	Data json.RawMessage `json:"data"`
@@ -103,25 +128,16 @@ type apiErrorEnvelope struct {
 	} `json:"error"`
 }
 
-func (c *SporkClient) doRequest(ctx context.Context, method, path string, body interface{}, result interface{}) error {
-	var jsonBytes []byte
-	if body != nil {
-		var err error
-		jsonBytes, err = json.Marshal(body)
-		if err != nil {
-			return fmt.Errorf("failed to marshal request body: %w", err)
-		}
-	}
-
-	url := c.BaseURL + path
-
+// doRawRequest performs an HTTP request with retry logic and returns the status code and response body.
+// Transient errors (429, 503, 504) and network errors are retried with exponential backoff.
+func (c *SporkClient) doRawRequest(ctx context.Context, method, reqURL string, jsonBytes []byte) (int, []byte, error) {
 	var lastErr error
 	for attempt := 0; attempt <= maxRetries; attempt++ {
 		if attempt > 0 {
 			delay := time.Duration(math.Pow(2, float64(attempt-1))) * baseDelay
 			select {
 			case <-ctx.Done():
-				return ctx.Err()
+				return 0, nil, ctx.Err()
 			case <-time.After(delay):
 			}
 		}
@@ -131,9 +147,9 @@ func (c *SporkClient) doRequest(ctx context.Context, method, path string, body i
 			reqBody = bytes.NewReader(jsonBytes)
 		}
 
-		req, err := http.NewRequestWithContext(ctx, method, url, reqBody)
+		req, err := http.NewRequestWithContext(ctx, method, reqURL, reqBody)
 		if err != nil {
-			return fmt.Errorf("failed to create request: %w", err)
+			return 0, nil, fmt.Errorf("failed to create request: %w", err)
 		}
 
 		req.Header.Set("Authorization", "Bearer "+c.APIKey)
@@ -143,7 +159,7 @@ func (c *SporkClient) doRequest(ctx context.Context, method, path string, body i
 		resp, err := c.HTTPClient.Do(req)
 		if err != nil {
 			lastErr = fmt.Errorf("request failed: %w", err)
-			continue // retry on network errors
+			continue
 		}
 
 		respBody, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBody))
@@ -157,7 +173,6 @@ func (c *SporkClient) doRequest(ctx context.Context, method, path string, body i
 		if resp.StatusCode == http.StatusTooManyRequests ||
 			resp.StatusCode == http.StatusServiceUnavailable ||
 			resp.StatusCode == http.StatusGatewayTimeout {
-			// Respect Retry-After header if present, capped to prevent unbounded sleep.
 			if retryAfter := resp.Header.Get("Retry-After"); retryAfter != "" {
 				if seconds, parseErr := strconv.Atoi(retryAfter); parseErr == nil {
 					if seconds > maxRetryAfter {
@@ -166,7 +181,7 @@ func (c *SporkClient) doRequest(ctx context.Context, method, path string, body i
 					if seconds > 0 {
 						select {
 						case <-ctx.Done():
-							return ctx.Err()
+							return 0, nil, ctx.Err()
 						case <-time.After(time.Duration(seconds) * time.Second):
 						}
 					}
@@ -176,10 +191,28 @@ func (c *SporkClient) doRequest(ctx context.Context, method, path string, body i
 			continue
 		}
 
-		return c.handleResponse(resp.StatusCode, respBody, result)
+		return resp.StatusCode, respBody, nil
 	}
 
-	return fmt.Errorf("request failed after %d retries: %w", maxRetries, lastErr)
+	return 0, nil, fmt.Errorf("request failed after %d retries: %w", maxRetries, lastErr)
+}
+
+func (c *SporkClient) doRequest(ctx context.Context, method, path string, body interface{}, result interface{}) error {
+	var jsonBytes []byte
+	if body != nil {
+		var err error
+		jsonBytes, err = json.Marshal(body)
+		if err != nil {
+			return fmt.Errorf("failed to marshal request body: %w", err)
+		}
+	}
+
+	statusCode, respBody, err := c.doRawRequest(ctx, method, c.BaseURL+path, jsonBytes)
+	if err != nil {
+		return err
+	}
+
+	return c.handleResponse(statusCode, respBody, result)
 }
 
 func (c *SporkClient) handleResponse(statusCode int, respBody []byte, result interface{}) error {
@@ -220,7 +253,7 @@ func (c *SporkClient) handleResponse(statusCode int, respBody []byte, result int
 		}
 		body := string(respBody)
 		if len(body) > maxErrorBodyLen {
-			body = body[:maxErrorBodyLen] + "…"
+			body = body[:maxErrorBodyLen] + "\u2026"
 		}
 		return fmt.Errorf("API error (HTTP %d): %s", statusCode, body)
 	}
@@ -307,81 +340,25 @@ func (c *SporkClient) DeleteAlertChannel(ctx context.Context, id string) error {
 
 // doListRequest performs a GET request and unwraps the list envelope {"data": [...], "meta": {...}}.
 func (c *SporkClient) doListRequest(ctx context.Context, path string, result interface{}) error {
-	var jsonBytes []byte
-	url := c.BaseURL + path
-	_ = jsonBytes // suppress unused warning
-
-	var lastErr error
-	for attempt := 0; attempt <= maxRetries; attempt++ {
-		if attempt > 0 {
-			delay := time.Duration(math.Pow(2, float64(attempt-1))) * baseDelay
-			select {
-			case <-ctx.Done():
-				return ctx.Err()
-			case <-time.After(delay):
-			}
-		}
-
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-		if err != nil {
-			return fmt.Errorf("failed to create request: %w", err)
-		}
-
-		req.Header.Set("Authorization", "Bearer "+c.APIKey)
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("User-Agent", c.UserAgent)
-
-		resp, err := c.HTTPClient.Do(req)
-		if err != nil {
-			lastErr = fmt.Errorf("request failed: %w", err)
-			continue
-		}
-
-		respBody, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBody))
-		resp.Body.Close()
-		if err != nil {
-			lastErr = fmt.Errorf("failed to read response body: %w", err)
-			continue
-		}
-
-		if resp.StatusCode == http.StatusTooManyRequests ||
-			resp.StatusCode == http.StatusServiceUnavailable ||
-			resp.StatusCode == http.StatusGatewayTimeout {
-			if retryAfter := resp.Header.Get("Retry-After"); retryAfter != "" {
-				if seconds, parseErr := strconv.Atoi(retryAfter); parseErr == nil {
-					if seconds > maxRetryAfter {
-						seconds = maxRetryAfter
-					}
-					if seconds > 0 {
-						select {
-						case <-ctx.Done():
-							return ctx.Err()
-						case <-time.After(time.Duration(seconds) * time.Second):
-						}
-					}
-				}
-			}
-			lastErr = fmt.Errorf("API error (HTTP %d): transient error, retrying", resp.StatusCode)
-			continue
-		}
-
-		if resp.StatusCode >= 400 {
-			return c.handleResponse(resp.StatusCode, respBody, nil)
-		}
-
-		// Parse list envelope
-		if result != nil && len(respBody) > 0 {
-			var envelope listEnvelope
-			if err := json.Unmarshal(respBody, &envelope); err != nil {
-				return fmt.Errorf("failed to unmarshal response envelope: %w", err)
-			}
-			if err := json.Unmarshal(envelope.Data, result); err != nil {
-				return fmt.Errorf("failed to unmarshal response data: %w", err)
-			}
-		}
-		return nil
+	statusCode, respBody, err := c.doRawRequest(ctx, http.MethodGet, c.BaseURL+path, nil)
+	if err != nil {
+		return err
 	}
-	return fmt.Errorf("request failed after %d retries: %w", maxRetries, lastErr)
+
+	if statusCode >= 400 {
+		return c.handleResponse(statusCode, respBody, nil)
+	}
+
+	if result != nil && len(respBody) > 0 {
+		var envelope listEnvelope
+		if err := json.Unmarshal(respBody, &envelope); err != nil {
+			return fmt.Errorf("failed to unmarshal response envelope: %w", err)
+		}
+		if err := json.Unmarshal(envelope.Data, result); err != nil {
+			return fmt.Errorf("failed to unmarshal response data: %w", err)
+		}
+	}
+	return nil
 }
 
 // ListMonitors returns all monitors for the authenticated user.
@@ -402,4 +379,57 @@ func (c *SporkClient) ListAlertChannels(ctx context.Context) ([]AlertChannel, er
 		return nil, err
 	}
 	return result, nil
+}
+
+// StatusPage CRUD
+
+func (c *SporkClient) CreateStatusPage(ctx context.Context, page StatusPage) (*StatusPage, error) {
+	var result StatusPage
+	err := c.doRequest(ctx, http.MethodPost, "/status-pages", page, &result)
+	if err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+func (c *SporkClient) GetStatusPage(ctx context.Context, id string) (*StatusPage, error) {
+	var result StatusPage
+	err := c.doRequest(ctx, http.MethodGet, "/status-pages/"+url.PathEscape(id), nil, &result)
+	if err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+func (c *SporkClient) UpdateStatusPage(ctx context.Context, id string, page StatusPage) (*StatusPage, error) {
+	var result StatusPage
+	err := c.doRequest(ctx, http.MethodPut, "/status-pages/"+url.PathEscape(id), page, &result)
+	if err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+func (c *SporkClient) DeleteStatusPage(ctx context.Context, id string) error {
+	return c.doRequest(ctx, http.MethodDelete, "/status-pages/"+url.PathEscape(id), nil, nil)
+}
+
+func (c *SporkClient) ListStatusPages(ctx context.Context) ([]StatusPage, error) {
+	var result []StatusPage
+	err := c.doListRequest(ctx, "/status-pages?per_page=100", &result)
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+// Custom domain management
+
+func (c *SporkClient) SetCustomDomain(ctx context.Context, statusPageID, domain string) error {
+	body := map[string]string{"domain": domain}
+	return c.doRequest(ctx, http.MethodPost, "/status-pages/"+url.PathEscape(statusPageID)+"/custom-domain", body, nil)
+}
+
+func (c *SporkClient) RemoveCustomDomain(ctx context.Context, statusPageID string) error {
+	return c.doRequest(ctx, http.MethodDelete, "/status-pages/"+url.PathEscape(statusPageID)+"/custom-domain", nil, nil)
 }
