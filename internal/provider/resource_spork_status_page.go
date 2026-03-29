@@ -29,18 +29,21 @@ type StatusPageResource struct {
 }
 
 type StatusPageResourceModel struct {
-	ID           types.String `tfsdk:"id"`
-	Name         types.String `tfsdk:"name"`
-	Slug         types.String `tfsdk:"slug"`
-	Components   types.List   `tfsdk:"components"`
-	CustomDomain types.String `tfsdk:"custom_domain"`
-	DomainStatus types.String `tfsdk:"domain_status"`
-	Theme        types.String `tfsdk:"theme"`
-	AccentColor  types.String `tfsdk:"accent_color"`
-	LogoURL      types.String `tfsdk:"logo_url"`
-	IsPublic     types.Bool   `tfsdk:"is_public"`
-	CreatedAt    types.String `tfsdk:"created_at"`
-	UpdatedAt    types.String `tfsdk:"updated_at"`
+	ID                      types.String `tfsdk:"id"`
+	Name                    types.String `tfsdk:"name"`
+	Slug                    types.String `tfsdk:"slug"`
+	Components              types.List   `tfsdk:"components"`
+	ComponentGroups         types.List   `tfsdk:"component_groups"`
+	CustomDomain            types.String `tfsdk:"custom_domain"`
+	DomainStatus            types.String `tfsdk:"domain_status"`
+	Theme                   types.String `tfsdk:"theme"`
+	AccentColor             types.String `tfsdk:"accent_color"`
+	LogoURL                 types.String `tfsdk:"logo_url"`
+	WebhookURL              types.String `tfsdk:"webhook_url"`
+	EmailSubscribersEnabled types.Bool   `tfsdk:"email_subscribers_enabled"`
+	IsPublic                types.Bool   `tfsdk:"is_public"`
+	CreatedAt               types.String `tfsdk:"created_at"`
+	UpdatedAt               types.String `tfsdk:"updated_at"`
 }
 
 type StatusPageComponentModel struct {
@@ -48,7 +51,14 @@ type StatusPageComponentModel struct {
 	MonitorID   types.String `tfsdk:"monitor_id"`
 	DisplayName types.String `tfsdk:"display_name"`
 	Description types.String `tfsdk:"description"`
+	GroupID     types.String `tfsdk:"group_id"`
 	Order       types.Int64  `tfsdk:"order"`
+}
+
+type StatusPageComponentGroupModel struct {
+	ID    types.String `tfsdk:"id"`
+	Name  types.String `tfsdk:"name"`
+	Order types.Int64  `tfsdk:"order"`
 }
 
 var componentAttrTypes = map[string]attr.Type{
@@ -56,7 +66,14 @@ var componentAttrTypes = map[string]attr.Type{
 	"monitor_id":   types.StringType,
 	"display_name": types.StringType,
 	"description":  types.StringType,
+	"group_id":     types.StringType,
 	"order":        types.Int64Type,
+}
+
+var componentGroupAttrTypes = map[string]attr.Type{
+	"id":    types.StringType,
+	"name":  types.StringType,
+	"order": types.Int64Type,
 }
 
 func NewStatusPageResource() resource.Resource {
@@ -121,10 +138,40 @@ func (r *StatusPageResource) Schema(_ context.Context, _ resource.SchemaRequest,
 							Optional:    true,
 							Description: "A description of the component.",
 						},
+						"group_id": schema.StringAttribute{
+							Optional:            true,
+							Description:         "The ID of the component group this component belongs to.",
+							MarkdownDescription: "The ID of the component group this component belongs to. Use the `id` from a `component_groups` entry.",
+						},
 						"order": schema.Int64Attribute{
 							Optional:    true,
 							Computed:    true,
 							Description: "Display order of the component on the status page.",
+						},
+					},
+				},
+			},
+			"component_groups": schema.ListNestedAttribute{
+				Optional:            true,
+				Description:         "Component groups for organizing components into named sections.",
+				MarkdownDescription: "Component groups for organizing components into named sections on the status page.",
+				NestedObject: schema.NestedAttributeObject{
+					Attributes: map[string]schema.Attribute{
+						"id": schema.StringAttribute{
+							Computed:    true,
+							Description: "The unique identifier of the component group.",
+							PlanModifiers: []planmodifier.String{
+								stringplanmodifier.UseStateForUnknown(),
+							},
+						},
+						"name": schema.StringAttribute{
+							Required:    true,
+							Description: "The display name of the component group.",
+						},
+						"order": schema.Int64Attribute{
+							Optional:    true,
+							Computed:    true,
+							Description: "Display order of the component group on the status page.",
 						},
 					},
 				},
@@ -170,6 +217,24 @@ func (r *StatusPageResource) Schema(_ context.Context, _ resource.SchemaRequest,
 						"must be an https:// URL",
 					),
 				},
+			},
+			"webhook_url": schema.StringAttribute{
+				Optional:            true,
+				Description:         "Webhook URL for incident notifications. Must be an https:// URL.",
+				MarkdownDescription: "Webhook URL for incident notifications. Must be an `https://` URL.",
+				Validators: []validator.String{
+					stringvalidator.RegexMatches(
+						regexp.MustCompile(`^https://`),
+						"must be an https:// URL",
+					),
+				},
+			},
+			"email_subscribers_enabled": schema.BoolAttribute{
+				Optional:            true,
+				Computed:            true,
+				Default:             booldefault.StaticBool(false),
+				Description:         "Whether email subscriber notifications are enabled. Default: false.",
+				MarkdownDescription: "Whether email subscriber notifications are enabled on the public status page. Default: `false`.",
 			},
 			"is_public": schema.BoolAttribute{
 				Optional:    true,
@@ -348,10 +413,11 @@ func (r *StatusPageResource) ImportState(ctx context.Context, req resource.Impor
 
 func statusPageFromModel(model StatusPageResourceModel) StatusPage {
 	page := StatusPage{
-		Name:     model.Name.ValueString(),
-		Slug:     model.Slug.ValueString(),
-		Theme:    model.Theme.ValueString(),
-		IsPublic: model.IsPublic.ValueBool(),
+		Name:                    model.Name.ValueString(),
+		Slug:                    model.Slug.ValueString(),
+		Theme:                   model.Theme.ValueString(),
+		IsPublic:                model.IsPublic.ValueBool(),
+		EmailSubscribersEnabled: model.EmailSubscribersEnabled.ValueBool(),
 	}
 
 	if !model.AccentColor.IsNull() && !model.AccentColor.IsUnknown() {
@@ -360,6 +426,10 @@ func statusPageFromModel(model StatusPageResourceModel) StatusPage {
 
 	if !model.LogoURL.IsNull() && !model.LogoURL.IsUnknown() {
 		page.LogoURL = model.LogoURL.ValueString()
+	}
+
+	if !model.WebhookURL.IsNull() && !model.WebhookURL.IsUnknown() {
+		page.WebhookURL = model.WebhookURL.ValueString()
 	}
 
 	if !model.Components.IsNull() && !model.Components.IsUnknown() {
@@ -377,7 +447,25 @@ func statusPageFromModel(model StatusPageResourceModel) StatusPage {
 			if !c.Description.IsNull() && !c.Description.IsUnknown() {
 				comp.Description = c.Description.ValueString()
 			}
+			if !c.GroupID.IsNull() && !c.GroupID.IsUnknown() {
+				comp.GroupID = c.GroupID.ValueString()
+			}
 			page.Components = append(page.Components, comp)
+		}
+	}
+
+	if !model.ComponentGroups.IsNull() && !model.ComponentGroups.IsUnknown() {
+		var groups []StatusPageComponentGroupModel
+		model.ComponentGroups.ElementsAs(context.Background(), &groups, false)
+		for _, g := range groups {
+			group := ComponentGroup{
+				Name:  g.Name.ValueString(),
+				Order: int(g.Order.ValueInt64()),
+			}
+			if !g.ID.IsNull() && !g.ID.IsUnknown() {
+				group.ID = g.ID.ValueString()
+			}
+			page.ComponentGroups = append(page.ComponentGroups, group)
 		}
 	}
 
@@ -386,13 +474,14 @@ func statusPageFromModel(model StatusPageResourceModel) StatusPage {
 
 func statusPageToModel(p StatusPage) StatusPageResourceModel {
 	model := StatusPageResourceModel{
-		ID:        types.StringValue(p.ID),
-		Name:      types.StringValue(p.Name),
-		Slug:      types.StringValue(p.Slug),
-		Theme:     types.StringValue(p.Theme),
-		IsPublic:  types.BoolValue(p.IsPublic),
-		CreatedAt: types.StringValue(p.CreatedAt),
-		UpdatedAt: types.StringValue(p.UpdatedAt),
+		ID:                      types.StringValue(p.ID),
+		Name:                    types.StringValue(p.Name),
+		Slug:                    types.StringValue(p.Slug),
+		Theme:                   types.StringValue(p.Theme),
+		IsPublic:                types.BoolValue(p.IsPublic),
+		EmailSubscribersEnabled: types.BoolValue(p.EmailSubscribersEnabled),
+		CreatedAt:               types.StringValue(p.CreatedAt),
+		UpdatedAt:               types.StringValue(p.UpdatedAt),
 	}
 
 	// Custom domain
@@ -418,6 +507,13 @@ func statusPageToModel(p StatusPage) StatusPageResourceModel {
 		model.LogoURL = types.StringNull()
 	}
 
+	// Webhook URL
+	if p.WebhookURL != "" {
+		model.WebhookURL = types.StringValue(p.WebhookURL)
+	} else {
+		model.WebhookURL = types.StringNull()
+	}
+
 	// Components
 	if len(p.Components) > 0 {
 		var compValues []attr.Value
@@ -426,17 +522,37 @@ func statusPageToModel(p StatusPage) StatusPageResourceModel {
 			if c.Description != "" {
 				desc = types.StringValue(c.Description)
 			}
+			groupID := types.StringNull()
+			if c.GroupID != "" {
+				groupID = types.StringValue(c.GroupID)
+			}
 			compValues = append(compValues, types.ObjectValueMust(componentAttrTypes, map[string]attr.Value{
 				"id":           types.StringValue(c.ID),
 				"monitor_id":   types.StringValue(c.MonitorID),
 				"display_name": types.StringValue(c.DisplayName),
 				"description":  desc,
+				"group_id":     groupID,
 				"order":        types.Int64Value(int64(c.Order)),
 			}))
 		}
 		model.Components = types.ListValueMust(types.ObjectType{AttrTypes: componentAttrTypes}, compValues)
 	} else {
 		model.Components = types.ListNull(types.ObjectType{AttrTypes: componentAttrTypes})
+	}
+
+	// Component groups
+	if len(p.ComponentGroups) > 0 {
+		var groupValues []attr.Value
+		for _, g := range p.ComponentGroups {
+			groupValues = append(groupValues, types.ObjectValueMust(componentGroupAttrTypes, map[string]attr.Value{
+				"id":    types.StringValue(g.ID),
+				"name":  types.StringValue(g.Name),
+				"order": types.Int64Value(int64(g.Order)),
+			}))
+		}
+		model.ComponentGroups = types.ListValueMust(types.ObjectType{AttrTypes: componentGroupAttrTypes}, groupValues)
+	} else {
+		model.ComponentGroups = types.ListNull(types.ObjectType{AttrTypes: componentGroupAttrTypes})
 	}
 
 	return model
