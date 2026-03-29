@@ -42,6 +42,7 @@ type StatusPageResourceModel struct {
 	WebhookURL              types.String `tfsdk:"webhook_url"`
 	EmailSubscribersEnabled types.Bool   `tfsdk:"email_subscribers_enabled"`
 	IsPublic                types.Bool   `tfsdk:"is_public"`
+	Password                types.String `tfsdk:"password"`
 	CreatedAt               types.String `tfsdk:"created_at"`
 	UpdatedAt               types.String `tfsdk:"updated_at"`
 }
@@ -242,6 +243,14 @@ func (r *StatusPageResource) Schema(_ context.Context, _ resource.SchemaRequest,
 				Default:     booldefault.StaticBool(true),
 				Description: "Whether the status page is publicly accessible. Default: true.",
 			},
+			"password": schema.StringAttribute{
+				Optional:    true,
+				Sensitive:   true,
+				Description: "Password for private status pages. Only used when is_public is false. Visitors must enter this password to view the page.",
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.UseStateForUnknown(),
+				},
+			},
 			"created_at": schema.StringAttribute{
 				Computed:    true,
 				Description: "Timestamp when the status page was created.",
@@ -333,6 +342,8 @@ func (r *StatusPageResource) Read(ctx context.Context, req resource.ReadRequest,
 	}
 
 	newState := statusPageToModel(*result)
+	// Preserve password from state — the API never returns it
+	newState.Password = state.Password
 	resp.Diagnostics.Append(resp.State.Set(ctx, &newState)...)
 }
 
@@ -430,6 +441,10 @@ func statusPageFromModel(model StatusPageResourceModel) StatusPage {
 
 	if !model.WebhookURL.IsNull() && !model.WebhookURL.IsUnknown() {
 		page.WebhookURL = model.WebhookURL.ValueString()
+	}
+
+	if !model.Password.IsNull() && !model.Password.IsUnknown() {
+		page.Password = model.Password.ValueString()
 	}
 
 	if !model.Components.IsNull() && !model.Components.IsUnknown() {
