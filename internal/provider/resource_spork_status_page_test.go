@@ -92,11 +92,13 @@ resource "spork_status_page" "test" {
   name = "Test Status Page with Components"
   slug = "tf-test-components"
 
-  components {
-    monitor_id   = spork_monitor.test.id
-    display_name = "API"
-    order        = 0
-  }
+  components = [
+    {
+      monitor_id   = spork_monitor.test.id
+      display_name = "API"
+      order        = 0
+    },
+  ]
 }
 `,
 				Check: resource.ComposeAggregateTestCheckFunc(
