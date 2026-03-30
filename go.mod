@@ -10,7 +10,7 @@ require (
 	github.com/sporkops/cli v0.0.0
 )
 
-replace github.com/sporkops/cli => /home/user/cli
+replace github.com/sporkops/cli => ./_cli
 
 require (
 	github.com/ProtonMail/go-crypto v1.1.0-alpha.2 // indirect

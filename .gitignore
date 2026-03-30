@@ -31,6 +31,9 @@ terraform.rc
 # GoReleaser
 dist/
 
+# SDK dependency (checked out by CI, symlinked locally)
+_cli/
+
 # IDE
 .idea/
 .vscode/
