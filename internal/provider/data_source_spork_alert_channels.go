@@ -6,13 +6,14 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+	"github.com/sporkops/cli/pkg/spork"
 )
 
 var _ datasource.DataSource = &AlertChannelsDataSource{}
 var _ datasource.DataSourceWithConfigure = &AlertChannelsDataSource{}
 
 type AlertChannelsDataSource struct {
-	client *SporkClient
+	client *spork.Client
 }
 
 type AlertChannelsDataSourceModel struct {
@@ -81,11 +82,11 @@ func (d *AlertChannelsDataSource) Configure(_ context.Context, req datasource.Co
 		return
 	}
 
-	client, ok := req.ProviderData.(*SporkClient)
+	client, ok := req.ProviderData.(*spork.Client)
 	if !ok {
 		resp.Diagnostics.AddError(
 			"Unexpected Data Source Configure Type",
-			"Expected *SporkClient, got something else. Please report this issue to the provider developers.",
+			"Expected *spork.Client, got something else. Please report this issue to the provider developers.",
 		)
 		return
 	}

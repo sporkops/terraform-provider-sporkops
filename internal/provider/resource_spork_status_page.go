@@ -2,7 +2,6 @@ package provider
 
 import (
 	"context"
-	"errors"
 	"regexp"
 
 	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
@@ -16,6 +15,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+	"github.com/sporkops/cli/pkg/spork"
 )
 
 var (
@@ -25,7 +25,7 @@ var (
 )
 
 type StatusPageResource struct {
-	client *SporkClient
+	client *spork.Client
 }
 
 type StatusPageResourceModel struct {
@@ -303,11 +303,11 @@ func (r *StatusPageResource) Configure(_ context.Context, req resource.Configure
 		return
 	}
 
-	client, ok := req.ProviderData.(*SporkClient)
+	client, ok := req.ProviderData.(*spork.Client)
 	if !ok {
 		resp.Diagnostics.AddError(
 			"Unexpected Resource Configure Type",
-			"Expected *SporkClient, got something else. Please report this issue to the provider developers.",
+			"Expected *spork.Client, got something else. Please report this issue to the provider developers.",
 		)
 		return
 	}
@@ -324,7 +324,7 @@ func (r *StatusPageResource) Create(ctx context.Context, req resource.CreateRequ
 
 	apiPage := statusPageFromModel(ctx, plan)
 
-	result, err := r.client.CreateStatusPage(ctx, apiPage)
+	result, err := r.client.CreateStatusPage(ctx, &apiPage)
 	if err != nil {
 		resp.Diagnostics.AddError("Error creating status page", err.Error())
 		return
@@ -365,7 +365,7 @@ func (r *StatusPageResource) Read(ctx context.Context, req resource.ReadRequest,
 
 	result, err := r.client.GetStatusPage(ctx, state.ID.ValueString())
 	if err != nil {
-		if errors.Is(err, ErrNotFound) {
+		if spork.IsNotFound(err) {
 			resp.State.RemoveResource(ctx)
 			return
 		}
@@ -394,7 +394,7 @@ func (r *StatusPageResource) Update(ctx context.Context, req resource.UpdateRequ
 
 	apiPage := statusPageFromModel(ctx, plan)
 
-	result, err := r.client.UpdateStatusPage(ctx, state.ID.ValueString(), apiPage)
+	result, err := r.client.UpdateStatusPage(ctx, state.ID.ValueString(), &apiPage)
 	if err != nil {
 		resp.Diagnostics.AddError("Error updating status page", err.Error())
 		return
@@ -443,7 +443,7 @@ func (r *StatusPageResource) Delete(ctx context.Context, req resource.DeleteRequ
 	}
 
 	err := r.client.DeleteStatusPage(ctx, state.ID.ValueString())
-	if err != nil && !errors.Is(err, ErrNotFound) {
+	if err != nil && !spork.IsNotFound(err) {
 		resp.Diagnostics.AddError("Error deleting status page", err.Error())
 	}
 }
@@ -454,8 +454,8 @@ func (r *StatusPageResource) ImportState(ctx context.Context, req resource.Impor
 
 // Conversion helpers
 
-func statusPageFromModel(ctx context.Context, model StatusPageResourceModel) StatusPage {
-	page := StatusPage{
+func statusPageFromModel(ctx context.Context, model StatusPageResourceModel) spork.StatusPage {
+	page := spork.StatusPage{
 		Name:                    model.Name.ValueString(),
 		Slug:                    model.Slug.ValueString(),
 		Theme:                   model.Theme.ValueString(),
@@ -486,7 +486,7 @@ func statusPageFromModel(ctx context.Context, model StatusPageResourceModel) Sta
 		var components []StatusPageComponentModel
 		model.Components.ElementsAs(ctx, &components, false)
 		for _, c := range components {
-			comp := StatusComponent{
+			comp := spork.StatusComponent{
 				MonitorID:   c.MonitorID.ValueString(),
 				DisplayName: c.DisplayName.ValueString(),
 				Order:       int(c.Order.ValueInt64()),
@@ -508,7 +508,7 @@ func statusPageFromModel(ctx context.Context, model StatusPageResourceModel) Sta
 		var groups []StatusPageComponentGroupModel
 		model.ComponentGroups.ElementsAs(ctx, &groups, false)
 		for _, g := range groups {
-			group := ComponentGroup{
+			group := spork.ComponentGroup{
 				Name:  g.Name.ValueString(),
 				Order: int(g.Order.ValueInt64()),
 			}
@@ -525,7 +525,7 @@ func statusPageFromModel(ctx context.Context, model StatusPageResourceModel) Sta
 	return page
 }
 
-func statusPageToModel(_ context.Context, p StatusPage) StatusPageResourceModel {
+func statusPageToModel(_ context.Context, p spork.StatusPage) StatusPageResourceModel {
 	model := StatusPageResourceModel{
 		ID:                      types.StringValue(p.ID),
 		Name:                    types.StringValue(p.Name),

@@ -2,19 +2,19 @@ package provider
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+	"github.com/sporkops/cli/pkg/spork"
 )
 
 var _ datasource.DataSource = &MonitorDataSource{}
 var _ datasource.DataSourceWithConfigure = &MonitorDataSource{}
 
 type MonitorDataSource struct {
-	client *SporkClient
+	client *spork.Client
 }
 
 type MonitorDataSourceModel struct {
@@ -153,11 +153,11 @@ func (d *MonitorDataSource) Configure(_ context.Context, req datasource.Configur
 		return
 	}
 
-	client, ok := req.ProviderData.(*SporkClient)
+	client, ok := req.ProviderData.(*spork.Client)
 	if !ok {
 		resp.Diagnostics.AddError(
 			"Unexpected Data Source Configure Type",
-			"Expected *SporkClient, got something else. Please report this issue to the provider developers.",
+			"Expected *spork.Client, got something else. Please report this issue to the provider developers.",
 		)
 		return
 	}
@@ -172,13 +172,13 @@ func (d *MonitorDataSource) Read(ctx context.Context, req datasource.ReadRequest
 		return
 	}
 
-	var result *Monitor
+	var result *spork.Monitor
 
 	if !config.ID.IsNull() && config.ID.ValueString() != "" {
 		// Lookup by ID
 		r, err := d.client.GetMonitor(ctx, config.ID.ValueString())
 		if err != nil {
-			if errors.Is(err, ErrNotFound) {
+			if spork.IsNotFound(err) {
 				resp.Diagnostics.AddError("Monitor Not Found", "No monitor found with ID: "+config.ID.ValueString())
 				return
 			}
@@ -193,7 +193,7 @@ func (d *MonitorDataSource) Read(ctx context.Context, req datasource.ReadRequest
 			resp.Diagnostics.AddError("Error listing monitors", err.Error())
 			return
 		}
-		var matches []Monitor
+		var matches []spork.Monitor
 		for _, m := range monitors {
 			if m.Name == config.Name.ValueString() {
 				matches = append(matches, m)
@@ -248,7 +248,7 @@ func (d *MonitorDataSource) Read(ctx context.Context, req datasource.ReadRequest
 		Interval:        types.Int64Value(int64(result.Interval)),
 		Timeout:         types.Int64Value(int64(result.Timeout)),
 		ExpectedStatus:  types.Int64Value(int64(result.ExpectedStatus)),
-		Paused:          types.BoolValue(result.Paused),
+		Paused:          types.BoolValue(result.Paused != nil && *result.Paused),
 		Status:          types.StringValue(result.Status),
 		Regions:         regions,
 		AlertChannelIDs: alertChannelIDs,

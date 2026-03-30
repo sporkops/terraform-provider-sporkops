@@ -5,13 +5,14 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
+	"github.com/sporkops/cli/pkg/spork"
 )
 
 var _ datasource.DataSource = &StatusPagesDataSource{}
 var _ datasource.DataSourceWithConfigure = &StatusPagesDataSource{}
 
 type StatusPagesDataSource struct {
-	client *SporkClient
+	client *spork.Client
 }
 
 type StatusPagesDataSourceModel struct {
@@ -164,11 +165,11 @@ func (d *StatusPagesDataSource) Configure(_ context.Context, req datasource.Conf
 		return
 	}
 
-	client, ok := req.ProviderData.(*SporkClient)
+	client, ok := req.ProviderData.(*spork.Client)
 	if !ok {
 		resp.Diagnostics.AddError(
 			"Unexpected Data Source Configure Type",
-			"Expected *SporkClient, got something else. Please report this issue to the provider developers.",
+			"Expected *spork.Client, got something else. Please report this issue to the provider developers.",
 		)
 		return
 	}
