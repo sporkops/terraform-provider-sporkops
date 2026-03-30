@@ -32,11 +32,23 @@ type SporkClient struct {
 }
 
 func NewSporkClient(baseURL, apiKey, version string) *SporkClient {
+	parsedBase, _ := url.Parse(baseURL)
 	return &SporkClient{
 		BaseURL: baseURL,
 		APIKey:  apiKey,
 		HTTPClient: &http.Client{
 			Timeout: 30 * time.Second,
+			CheckRedirect: func(req *http.Request, via []*http.Request) error {
+				if len(via) >= 10 {
+					return fmt.Errorf("too many redirects")
+				}
+				// Strip Authorization header on cross-origin redirects to
+				// prevent credential leakage to external domains.
+				if parsedBase != nil && req.URL.Host != parsedBase.Host {
+					req.Header.Del("Authorization")
+				}
+				return nil
+			},
 		},
 		UserAgent: fmt.Sprintf("spork-terraform/%s", version),
 	}
