@@ -75,8 +75,10 @@ resource "spork_status_page" "main" {
   - `description` (Optional, String) — A description of the component.
   - `order` (Optional, Number) — Display order (0-based).
 - `custom_domain` (Optional, String) — Custom domain for the status page (e.g. `status.example.com`). Requires a CNAME record pointing to `status.sporkops.com`.
-- `theme` (Optional, String) — Color theme. One of: `light`, `dark`. Default: `light`.
+- `theme` (Optional, String) — Color theme. One of: `light`, `dark`, `blue`, `midnight`. Default: `light`.
 - `accent_color` (Optional, String) — Accent color as a hex code (e.g. `#ff0000`).
+- `font_family` (Optional, String) — Font family for the status page. One of: `system`, `sans-serif`, `serif`, `monospace`. Default: `system`.
+- `header_style` (Optional, String) — Header style for the status page. One of: `default`, `banner`, `minimal`. Default: `default`.
 - `logo_url` (Optional, String) — URL of the logo. Must be an `https://` URL.
 - `is_public` (Optional, Boolean) — Whether the status page is publicly accessible. Default: `true`.
 
