@@ -110,6 +110,10 @@ func (d *StatusPageDataSource) Schema(_ context.Context, _ datasource.SchemaRequ
 							Computed:    true,
 							Description: "The display name of the component group.",
 						},
+						"description": schema.StringAttribute{
+							Computed:    true,
+							Description: "A description of the component group.",
+						},
 						"order": schema.Int64Attribute{
 							Computed:    true,
 							Description: "Display order of the component group.",
@@ -306,22 +310,27 @@ func statusPageToDataSourceModel(p StatusPage) StatusPageDataSourceModel {
 		}
 		model.Components = types.ListValueMust(types.ObjectType{AttrTypes: componentAttrTypes}, compValues)
 	} else {
-		model.Components = types.ListValueMust(types.ObjectType{AttrTypes: componentAttrTypes}, []attr.Value{})
+		model.Components = types.ListNull(types.ObjectType{AttrTypes: componentAttrTypes})
 	}
 
 	// Component groups
 	if len(p.ComponentGroups) > 0 {
 		var groupValues []attr.Value
 		for _, g := range p.ComponentGroups {
+			desc := types.StringNull()
+			if g.Description != "" {
+				desc = types.StringValue(g.Description)
+			}
 			groupValues = append(groupValues, types.ObjectValueMust(componentGroupAttrTypes, map[string]attr.Value{
-				"id":    types.StringValue(g.ID),
-				"name":  types.StringValue(g.Name),
-				"order": types.Int64Value(int64(g.Order)),
+				"id":          types.StringValue(g.ID),
+				"name":        types.StringValue(g.Name),
+				"description": desc,
+				"order":       types.Int64Value(int64(g.Order)),
 			}))
 		}
 		model.ComponentGroups = types.ListValueMust(types.ObjectType{AttrTypes: componentGroupAttrTypes}, groupValues)
 	} else {
-		model.ComponentGroups = types.ListValueMust(types.ObjectType{AttrTypes: componentGroupAttrTypes}, []attr.Value{})
+		model.ComponentGroups = types.ListNull(types.ObjectType{AttrTypes: componentGroupAttrTypes})
 	}
 
 	return model

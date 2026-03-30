@@ -93,6 +93,10 @@ func (d *StatusPagesDataSource) Schema(_ context.Context, _ datasource.SchemaReq
 										Computed:    true,
 										Description: "The display name of the component group.",
 									},
+									"description": schema.StringAttribute{
+										Computed:    true,
+										Description: "A description of the component group.",
+									},
 									"order": schema.Int64Attribute{
 										Computed:    true,
 										Description: "Display order of the component group.",
