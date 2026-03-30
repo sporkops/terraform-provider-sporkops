@@ -59,9 +59,10 @@ type StatusPageComponentModel struct {
 }
 
 type StatusPageComponentGroupModel struct {
-	ID    types.String `tfsdk:"id"`
-	Name  types.String `tfsdk:"name"`
-	Order types.Int64  `tfsdk:"order"`
+	ID          types.String `tfsdk:"id"`
+	Name        types.String `tfsdk:"name"`
+	Description types.String `tfsdk:"description"`
+	Order       types.Int64  `tfsdk:"order"`
 }
 
 var componentAttrTypes = map[string]attr.Type{
@@ -74,9 +75,10 @@ var componentAttrTypes = map[string]attr.Type{
 }
 
 var componentGroupAttrTypes = map[string]attr.Type{
-	"id":    types.StringType,
-	"name":  types.StringType,
-	"order": types.Int64Type,
+	"id":          types.StringType,
+	"name":        types.StringType,
+	"description": types.StringType,
+	"order":       types.Int64Type,
 }
 
 func NewStatusPageResource() resource.Resource {
@@ -170,6 +172,14 @@ func (r *StatusPageResource) Schema(_ context.Context, _ resource.SchemaRequest,
 						"name": schema.StringAttribute{
 							Required:    true,
 							Description: "The display name of the component group.",
+						},
+						"description": schema.StringAttribute{
+							Optional:    true,
+							Computed:    true,
+							Description: "A description of the component group.",
+							PlanModifiers: []planmodifier.String{
+								stringplanmodifier.UseStateForUnknown(),
+							},
 						},
 						"order": schema.Int64Attribute{
 							Optional:    true,
@@ -505,6 +515,9 @@ func statusPageFromModel(ctx context.Context, model StatusPageResourceModel) Sta
 			if !g.ID.IsNull() && !g.ID.IsUnknown() {
 				group.ID = g.ID.ValueString()
 			}
+			if !g.Description.IsNull() && !g.Description.IsUnknown() {
+				group.Description = g.Description.ValueString()
+			}
 			page.ComponentGroups = append(page.ComponentGroups, group)
 		}
 	}
@@ -588,10 +601,15 @@ func statusPageToModel(_ context.Context, p StatusPage) StatusPageResourceModel 
 	if len(p.ComponentGroups) > 0 {
 		var groupValues []attr.Value
 		for _, g := range p.ComponentGroups {
+			desc := types.StringNull()
+			if g.Description != "" {
+				desc = types.StringValue(g.Description)
+			}
 			groupValues = append(groupValues, types.ObjectValueMust(componentGroupAttrTypes, map[string]attr.Value{
-				"id":    types.StringValue(g.ID),
-				"name":  types.StringValue(g.Name),
-				"order": types.Int64Value(int64(g.Order)),
+				"id":          types.StringValue(g.ID),
+				"name":        types.StringValue(g.Name),
+				"description": desc,
+				"order":       types.Int64Value(int64(g.Order)),
 			}))
 		}
 		model.ComponentGroups = types.ListValueMust(types.ObjectType{AttrTypes: componentGroupAttrTypes}, groupValues)
