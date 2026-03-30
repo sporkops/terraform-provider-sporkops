@@ -32,7 +32,7 @@ terraform.rc
 dist/
 
 # SDK dependency (checked out by CI, symlinked locally)
-_cli/
+_cli
 
 # IDE
 .idea/
