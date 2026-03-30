@@ -231,7 +231,7 @@ func (r *MonitorResource) Create(ctx context.Context, req resource.CreateRequest
 		return
 	}
 
-	apiMonitor := monitorFromModel(plan)
+	apiMonitor := monitorFromModel(ctx, plan)
 
 	result, err := r.client.CreateMonitor(ctx, apiMonitor)
 	if err != nil {
@@ -239,7 +239,7 @@ func (r *MonitorResource) Create(ctx context.Context, req resource.CreateRequest
 		return
 	}
 
-	state := monitorToModel(*result)
+	state := monitorToModel(ctx, *result)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 
@@ -260,7 +260,7 @@ func (r *MonitorResource) Read(ctx context.Context, req resource.ReadRequest, re
 		return
 	}
 
-	newState := monitorToModel(*result)
+	newState := monitorToModel(ctx, *result)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &newState)...)
 }
 
@@ -277,7 +277,7 @@ func (r *MonitorResource) Update(ctx context.Context, req resource.UpdateRequest
 		return
 	}
 
-	apiMonitor := monitorFromModel(plan)
+	apiMonitor := monitorFromModel(ctx, plan)
 
 	result, err := r.client.UpdateMonitor(ctx, state.ID.ValueString(), apiMonitor)
 	if err != nil {
@@ -285,7 +285,7 @@ func (r *MonitorResource) Update(ctx context.Context, req resource.UpdateRequest
 		return
 	}
 
-	newState := monitorToModel(*result)
+	newState := monitorToModel(ctx, *result)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &newState)...)
 }
 
@@ -354,7 +354,7 @@ func (r *MonitorResource) ImportState(ctx context.Context, req resource.ImportSt
 
 // Conversion helpers
 
-func monitorFromModel(model MonitorResourceModel) Monitor {
+func monitorFromModel(ctx context.Context, model MonitorResourceModel) Monitor {
 	mon := Monitor{
 		Target:         model.Target.ValueString(),
 		Name:           model.Name.ValueString(),
@@ -372,50 +372,50 @@ func monitorFromModel(model MonitorResourceModel) Monitor {
 
 	if !model.Regions.IsNull() && !model.Regions.IsUnknown() {
 		var regions []string
-		model.Regions.ElementsAs(context.Background(), &regions, false)
+		model.Regions.ElementsAs(ctx, &regions, false)
 		mon.Regions = regions
 	}
 
 	if !model.AlertChannelIDs.IsNull() && !model.AlertChannelIDs.IsUnknown() {
 		var ids []string
-		model.AlertChannelIDs.ElementsAs(context.Background(), &ids, false)
+		model.AlertChannelIDs.ElementsAs(ctx, &ids, false)
 		mon.AlertChannelIDs = ids
 	}
 
 	if !model.Tags.IsNull() && !model.Tags.IsUnknown() {
 		var tags []string
-		model.Tags.ElementsAs(context.Background(), &tags, false)
+		model.Tags.ElementsAs(ctx, &tags, false)
 		mon.Tags = tags
 	}
 
 	if !model.Headers.IsNull() && !model.Headers.IsUnknown() {
 		var headers map[string]string
-		model.Headers.ElementsAs(context.Background(), &headers, false)
+		model.Headers.ElementsAs(ctx, &headers, false)
 		mon.Headers = headers
 	}
 
 	return mon
 }
 
-func monitorToModel(m Monitor) MonitorResourceModel {
-	regions, _ := types.ListValueFrom(context.Background(), types.StringType, m.Regions)
+func monitorToModel(ctx context.Context, m Monitor) MonitorResourceModel {
+	regions, _ := types.ListValueFrom(ctx, types.StringType, m.Regions)
 	if m.Regions == nil {
-		regions, _ = types.ListValueFrom(context.Background(), types.StringType, []string{"us-central1"})
+		regions, _ = types.ListValueFrom(ctx, types.StringType, []string{"us-central1"})
 	}
 
 	alertChannelIDs := types.ListNull(types.StringType)
 	if m.AlertChannelIDs != nil {
-		alertChannelIDs, _ = types.ListValueFrom(context.Background(), types.StringType, m.AlertChannelIDs)
+		alertChannelIDs, _ = types.ListValueFrom(ctx, types.StringType, m.AlertChannelIDs)
 	}
 
 	tags := types.ListNull(types.StringType)
 	if m.Tags != nil {
-		tags, _ = types.ListValueFrom(context.Background(), types.StringType, m.Tags)
+		tags, _ = types.ListValueFrom(ctx, types.StringType, m.Tags)
 	}
 
 	headers := types.MapNull(types.StringType)
 	if m.Headers != nil {
-		headers, _ = types.MapValueFrom(context.Background(), types.StringType, m.Headers)
+		headers, _ = types.MapValueFrom(ctx, types.StringType, m.Headers)
 	}
 
 	body := types.StringNull()

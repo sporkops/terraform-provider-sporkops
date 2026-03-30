@@ -312,7 +312,7 @@ func (r *StatusPageResource) Create(ctx context.Context, req resource.CreateRequ
 		return
 	}
 
-	apiPage := statusPageFromModel(plan)
+	apiPage := statusPageFromModel(ctx, plan)
 
 	result, err := r.client.CreateStatusPage(ctx, apiPage)
 	if err != nil {
@@ -322,7 +322,7 @@ func (r *StatusPageResource) Create(ctx context.Context, req resource.CreateRequ
 
 	// Save state immediately so the resource is tracked even if the
 	// custom domain call below fails (prevents orphaned resources).
-	state := statusPageToModel(*result)
+	state := statusPageToModel(ctx, *result)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
@@ -341,7 +341,7 @@ func (r *StatusPageResource) Create(ctx context.Context, req resource.CreateRequ
 			resp.Diagnostics.AddError("Error reading status page after setting custom domain", err.Error())
 			return
 		}
-		state = statusPageToModel(*result)
+		state = statusPageToModel(ctx, *result)
 		resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 	}
 }
@@ -363,7 +363,7 @@ func (r *StatusPageResource) Read(ctx context.Context, req resource.ReadRequest,
 		return
 	}
 
-	newState := statusPageToModel(*result)
+	newState := statusPageToModel(ctx, *result)
 	// Preserve password from state — the API never returns it
 	newState.Password = state.Password
 	resp.Diagnostics.Append(resp.State.Set(ctx, &newState)...)
@@ -382,7 +382,7 @@ func (r *StatusPageResource) Update(ctx context.Context, req resource.UpdateRequ
 		return
 	}
 
-	apiPage := statusPageFromModel(plan)
+	apiPage := statusPageFromModel(ctx, plan)
 
 	result, err := r.client.UpdateStatusPage(ctx, state.ID.ValueString(), apiPage)
 	if err != nil {
@@ -421,7 +421,7 @@ func (r *StatusPageResource) Update(ctx context.Context, req resource.UpdateRequ
 		}
 	}
 
-	newState := statusPageToModel(*result)
+	newState := statusPageToModel(ctx, *result)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &newState)...)
 }
 
@@ -444,7 +444,7 @@ func (r *StatusPageResource) ImportState(ctx context.Context, req resource.Impor
 
 // Conversion helpers
 
-func statusPageFromModel(model StatusPageResourceModel) StatusPage {
+func statusPageFromModel(ctx context.Context, model StatusPageResourceModel) StatusPage {
 	page := StatusPage{
 		Name:                    model.Name.ValueString(),
 		Slug:                    model.Slug.ValueString(),
@@ -474,7 +474,7 @@ func statusPageFromModel(model StatusPageResourceModel) StatusPage {
 
 	if !model.Components.IsNull() && !model.Components.IsUnknown() {
 		var components []StatusPageComponentModel
-		model.Components.ElementsAs(context.Background(), &components, false)
+		model.Components.ElementsAs(ctx, &components, false)
 		for _, c := range components {
 			comp := StatusComponent{
 				MonitorID:   c.MonitorID.ValueString(),
@@ -496,7 +496,7 @@ func statusPageFromModel(model StatusPageResourceModel) StatusPage {
 
 	if !model.ComponentGroups.IsNull() && !model.ComponentGroups.IsUnknown() {
 		var groups []StatusPageComponentGroupModel
-		model.ComponentGroups.ElementsAs(context.Background(), &groups, false)
+		model.ComponentGroups.ElementsAs(ctx, &groups, false)
 		for _, g := range groups {
 			group := ComponentGroup{
 				Name:  g.Name.ValueString(),
@@ -512,7 +512,7 @@ func statusPageFromModel(model StatusPageResourceModel) StatusPage {
 	return page
 }
 
-func statusPageToModel(p StatusPage) StatusPageResourceModel {
+func statusPageToModel(_ context.Context, p StatusPage) StatusPageResourceModel {
 	model := StatusPageResourceModel{
 		ID:                      types.StringValue(p.ID),
 		Name:                    types.StringValue(p.Name),

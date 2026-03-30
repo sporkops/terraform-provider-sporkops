@@ -122,7 +122,7 @@ func (r *AlertChannelResource) Create(ctx context.Context, req resource.CreateRe
 		return
 	}
 
-	result, err := r.client.CreateAlertChannel(ctx, alertChannelFromModel(plan))
+	result, err := r.client.CreateAlertChannel(ctx, alertChannelFromModel(ctx, plan))
 	if err != nil {
 		resp.Diagnostics.AddError("Error creating alert channel", err.Error())
 		return
@@ -130,7 +130,7 @@ func (r *AlertChannelResource) Create(ctx context.Context, req resource.CreateRe
 
 	// On create the API returns the full response (including webhook secret).
 	// Pass plan as fallback so user-provided fields are preserved in state.
-	state := alertChannelToModel(*result, &plan)
+	state := alertChannelToModel(ctx, *result, &plan)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 
@@ -152,7 +152,7 @@ func (r *AlertChannelResource) Read(ctx context.Context, req resource.ReadReques
 	}
 
 	// Pass current state so sensitive fields the API redacts are preserved.
-	newState := alertChannelToModel(*result, &state)
+	newState := alertChannelToModel(ctx, *result, &state)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &newState)...)
 }
 
@@ -169,14 +169,14 @@ func (r *AlertChannelResource) Update(ctx context.Context, req resource.UpdateRe
 		return
 	}
 
-	result, err := r.client.UpdateAlertChannel(ctx, state.ID.ValueString(), alertChannelFromModel(plan))
+	result, err := r.client.UpdateAlertChannel(ctx, state.ID.ValueString(), alertChannelFromModel(ctx, plan))
 	if err != nil {
 		resp.Diagnostics.AddError("Error updating alert channel", err.Error())
 		return
 	}
 
 	// Use plan as fallback for redacted config values; preserve secret from state.
-	newState := alertChannelToModel(*result, &plan)
+	newState := alertChannelToModel(ctx, *result, &plan)
 	newState.Secret = state.Secret
 	resp.Diagnostics.Append(resp.State.Set(ctx, &newState)...)
 }
@@ -201,7 +201,7 @@ func (r *AlertChannelResource) ImportState(ctx context.Context, req resource.Imp
 // Conversion helpers
 
 // alertChannelFromModel serializes a Terraform model to the API request struct.
-func alertChannelFromModel(model AlertChannelResourceModel) AlertChannel {
+func alertChannelFromModel(ctx context.Context, model AlertChannelResourceModel) AlertChannel {
 	channel := AlertChannel{
 		Name:   model.Name.ValueString(),
 		Type:   model.Type.ValueString(),
@@ -209,7 +209,7 @@ func alertChannelFromModel(model AlertChannelResourceModel) AlertChannel {
 	}
 
 	if !model.Config.IsNull() && !model.Config.IsUnknown() {
-		model.Config.ElementsAs(context.Background(), &channel.Config, false)
+		model.Config.ElementsAs(ctx, &channel.Config, false)
 	}
 
 	return channel
@@ -218,7 +218,7 @@ func alertChannelFromModel(model AlertChannelResourceModel) AlertChannel {
 // alertChannelToModel deserializes an API AlertChannel into a Terraform model.
 // fallback provides current state/plan values for sensitive fields that the API
 // redacts on reads (bot_token, integration_key, url, etc.).
-func alertChannelToModel(c AlertChannel, fallback *AlertChannelResourceModel) AlertChannelResourceModel {
+func alertChannelToModel(ctx context.Context, c AlertChannel, fallback *AlertChannelResourceModel) AlertChannelResourceModel {
 	model := AlertChannelResourceModel{
 		ID:       types.StringValue(c.ID),
 		Name:     types.StringValue(c.Name),
@@ -252,7 +252,7 @@ func alertChannelToModel(c AlertChannel, fallback *AlertChannelResourceModel) Al
 	// (redacted values), fall back to the state/plan values.
 	if fallback != nil && !fallback.Config.IsNull() && !fallback.Config.IsUnknown() {
 		var fallbackConfig map[string]string
-		fallback.Config.ElementsAs(context.Background(), &fallbackConfig, false)
+		fallback.Config.ElementsAs(ctx, &fallbackConfig, false)
 		for k, v := range fallbackConfig {
 			if existing, ok := configData[k]; !ok || existing == "" {
 				configData[k] = v
@@ -260,7 +260,7 @@ func alertChannelToModel(c AlertChannel, fallback *AlertChannelResourceModel) Al
 		}
 	}
 
-	configMap, _ := types.MapValueFrom(context.Background(), types.StringType, configData)
+	configMap, _ := types.MapValueFrom(ctx, types.StringType, configData)
 	model.Config = configMap
 
 	return model

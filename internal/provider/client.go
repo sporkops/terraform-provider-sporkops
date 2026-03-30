@@ -358,9 +358,7 @@ func (c *SporkClient) DeleteAlertChannel(ctx context.Context, id string) error {
 
 // doListRequest performs a GET request and unwraps the list envelope {"data": [...], "meta": {...}}.
 func (c *SporkClient) doListRequest(ctx context.Context, path string, result interface{}) error {
-	var jsonBytes []byte
 	url := c.BaseURL + path
-	_ = jsonBytes // suppress unused warning
 
 	var lastErr error
 	for attempt := 0; attempt <= maxRetries; attempt++ {
