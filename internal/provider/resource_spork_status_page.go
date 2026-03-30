@@ -38,6 +38,8 @@ type StatusPageResourceModel struct {
 	DomainStatus            types.String `tfsdk:"domain_status"`
 	Theme                   types.String `tfsdk:"theme"`
 	AccentColor             types.String `tfsdk:"accent_color"`
+	FontFamily              types.String `tfsdk:"font_family"`
+	HeaderStyle             types.String `tfsdk:"header_style"`
 	LogoURL                 types.String `tfsdk:"logo_url"`
 	WebhookURL              types.String `tfsdk:"webhook_url"`
 	EmailSubscribersEnabled types.Bool   `tfsdk:"email_subscribers_enabled"`
@@ -192,9 +194,9 @@ func (r *StatusPageResource) Schema(_ context.Context, _ resource.SchemaRequest,
 				Computed:            true,
 				Default:             stringdefault.StaticString("light"),
 				Description:         "Color theme for the status page. Default: light.",
-				MarkdownDescription: "Color theme for the status page. One of: `light`, `dark`. Default: `light`.",
+				MarkdownDescription: "Color theme for the status page. One of: `light`, `dark`, `blue`, `midnight`. Default: `light`.",
 				Validators: []validator.String{
-					stringvalidator.OneOf("light", "dark"),
+					stringvalidator.OneOf("light", "dark", "blue", "midnight"),
 				},
 			},
 			"accent_color": schema.StringAttribute{
@@ -206,6 +208,26 @@ func (r *StatusPageResource) Schema(_ context.Context, _ resource.SchemaRequest,
 						regexp.MustCompile(`^#[0-9a-fA-F]{6}$`),
 						"must be a hex color (e.g. #ff0000)",
 					),
+				},
+			},
+			"font_family": schema.StringAttribute{
+				Optional:            true,
+				Computed:            true,
+				Default:             stringdefault.StaticString("system"),
+				Description:         "Font family for the status page. Default: system.",
+				MarkdownDescription: "Font family for the status page. One of: `system`, `sans-serif`, `serif`, `monospace`. Default: `system`.",
+				Validators: []validator.String{
+					stringvalidator.OneOf("system", "sans-serif", "serif", "monospace"),
+				},
+			},
+			"header_style": schema.StringAttribute{
+				Optional:            true,
+				Computed:            true,
+				Default:             stringdefault.StaticString("default"),
+				Description:         "Header style for the status page. Default: default.",
+				MarkdownDescription: "Header style for the status page. One of: `default`, `banner`, `minimal`. Default: `default`.",
+				Validators: []validator.String{
+					stringvalidator.OneOf("default", "banner", "minimal"),
 				},
 			},
 			"logo_url": schema.StringAttribute{
@@ -435,6 +457,9 @@ func statusPageFromModel(model StatusPageResourceModel) StatusPage {
 		page.AccentColor = model.AccentColor.ValueString()
 	}
 
+	page.FontFamily = model.FontFamily.ValueString()
+	page.HeaderStyle = model.HeaderStyle.ValueString()
+
 	if !model.LogoURL.IsNull() && !model.LogoURL.IsUnknown() {
 		page.LogoURL = model.LogoURL.ValueString()
 	}
@@ -507,6 +532,10 @@ func statusPageToModel(p StatusPage) StatusPageResourceModel {
 		model.CustomDomain = types.StringNull()
 		model.DomainStatus = types.StringNull()
 	}
+
+	// Font family & header style
+	model.FontFamily = types.StringValue(p.FontFamily)
+	model.HeaderStyle = types.StringValue(p.HeaderStyle)
 
 	// Accent color
 	if p.AccentColor != "" {

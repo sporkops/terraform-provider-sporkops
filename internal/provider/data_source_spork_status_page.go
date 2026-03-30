@@ -27,6 +27,8 @@ type StatusPageDataSourceModel struct {
 	DomainStatus types.String `tfsdk:"domain_status"`
 	Theme        types.String `tfsdk:"theme"`
 	AccentColor  types.String `tfsdk:"accent_color"`
+	FontFamily   types.String `tfsdk:"font_family"`
+	HeaderStyle  types.String `tfsdk:"header_style"`
 	LogoURL      types.String `tfsdk:"logo_url"`
 	IsPublic     types.Bool   `tfsdk:"is_public"`
 	CreatedAt    types.String `tfsdk:"created_at"`
@@ -103,6 +105,14 @@ func (d *StatusPageDataSource) Schema(_ context.Context, _ datasource.SchemaRequ
 			"accent_color": schema.StringAttribute{
 				Computed:    true,
 				Description: "Accent color as a hex color.",
+			},
+			"font_family": schema.StringAttribute{
+				Computed:    true,
+				Description: "Font family for the status page.",
+			},
+			"header_style": schema.StringAttribute{
+				Computed:    true,
+				Description: "Header style for the status page.",
 			},
 			"logo_url": schema.StringAttribute{
 				Computed:    true,
@@ -221,6 +231,9 @@ func statusPageToDataSourceModel(p StatusPage) StatusPageDataSourceModel {
 	} else {
 		model.AccentColor = types.StringNull()
 	}
+
+	model.FontFamily = types.StringValue(p.FontFamily)
+	model.HeaderStyle = types.StringValue(p.HeaderStyle)
 
 	if p.LogoURL != "" {
 		model.LogoURL = types.StringValue(p.LogoURL)
