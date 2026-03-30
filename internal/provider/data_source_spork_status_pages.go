@@ -69,9 +69,33 @@ func (d *StatusPagesDataSource) Schema(_ context.Context, _ datasource.SchemaReq
 										Computed:    true,
 										Description: "A description of the component.",
 									},
+									"group_id": schema.StringAttribute{
+										Computed:    true,
+										Description: "The ID of the component group this component belongs to.",
+									},
 									"order": schema.Int64Attribute{
 										Computed:    true,
 										Description: "Display order of the component.",
+									},
+								},
+							},
+						},
+						"component_groups": schema.ListNestedAttribute{
+							Computed:    true,
+							Description: "Component groups for organizing components into named sections.",
+							NestedObject: schema.NestedAttributeObject{
+								Attributes: map[string]schema.Attribute{
+									"id": schema.StringAttribute{
+										Computed:    true,
+										Description: "The unique identifier of the component group.",
+									},
+									"name": schema.StringAttribute{
+										Computed:    true,
+										Description: "The display name of the component group.",
+									},
+									"order": schema.Int64Attribute{
+										Computed:    true,
+										Description: "Display order of the component group.",
 									},
 								},
 							},
@@ -95,6 +119,22 @@ func (d *StatusPagesDataSource) Schema(_ context.Context, _ datasource.SchemaReq
 						"logo_url": schema.StringAttribute{
 							Computed:    true,
 							Description: "URL of the logo displayed on the status page.",
+						},
+						"webhook_url": schema.StringAttribute{
+							Computed:    true,
+							Description: "Webhook URL for incident notifications.",
+						},
+						"email_subscribers_enabled": schema.BoolAttribute{
+							Computed:    true,
+							Description: "Whether email subscriber notifications are enabled.",
+						},
+						"font_family": schema.StringAttribute{
+							Computed:    true,
+							Description: "Font family for the status page.",
+						},
+						"header_style": schema.StringAttribute{
+							Computed:    true,
+							Description: "Header style for the status page.",
 						},
 						"is_public": schema.BoolAttribute{
 							Computed:    true,

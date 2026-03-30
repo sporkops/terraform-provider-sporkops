@@ -19,20 +19,23 @@ type StatusPageDataSource struct {
 }
 
 type StatusPageDataSourceModel struct {
-	ID           types.String `tfsdk:"id"`
-	Name         types.String `tfsdk:"name"`
-	Slug         types.String `tfsdk:"slug"`
-	Components   types.List   `tfsdk:"components"`
-	CustomDomain types.String `tfsdk:"custom_domain"`
-	DomainStatus types.String `tfsdk:"domain_status"`
-	Theme        types.String `tfsdk:"theme"`
-	AccentColor  types.String `tfsdk:"accent_color"`
-	FontFamily   types.String `tfsdk:"font_family"`
-	HeaderStyle  types.String `tfsdk:"header_style"`
-	LogoURL      types.String `tfsdk:"logo_url"`
-	IsPublic     types.Bool   `tfsdk:"is_public"`
-	CreatedAt    types.String `tfsdk:"created_at"`
-	UpdatedAt    types.String `tfsdk:"updated_at"`
+	ID                      types.String `tfsdk:"id"`
+	Name                    types.String `tfsdk:"name"`
+	Slug                    types.String `tfsdk:"slug"`
+	Components              types.List   `tfsdk:"components"`
+	ComponentGroups         types.List   `tfsdk:"component_groups"`
+	CustomDomain            types.String `tfsdk:"custom_domain"`
+	DomainStatus            types.String `tfsdk:"domain_status"`
+	Theme                   types.String `tfsdk:"theme"`
+	AccentColor             types.String `tfsdk:"accent_color"`
+	FontFamily              types.String `tfsdk:"font_family"`
+	HeaderStyle             types.String `tfsdk:"header_style"`
+	LogoURL                 types.String `tfsdk:"logo_url"`
+	WebhookURL              types.String `tfsdk:"webhook_url"`
+	EmailSubscribersEnabled types.Bool   `tfsdk:"email_subscribers_enabled"`
+	IsPublic                types.Bool   `tfsdk:"is_public"`
+	CreatedAt               types.String `tfsdk:"created_at"`
+	UpdatedAt               types.String `tfsdk:"updated_at"`
 }
 
 func NewStatusPageDataSource() datasource.DataSource {
@@ -83,9 +86,33 @@ func (d *StatusPageDataSource) Schema(_ context.Context, _ datasource.SchemaRequ
 							Computed:    true,
 							Description: "A description of the component.",
 						},
+						"group_id": schema.StringAttribute{
+							Computed:    true,
+							Description: "The ID of the component group this component belongs to.",
+						},
 						"order": schema.Int64Attribute{
 							Computed:    true,
 							Description: "Display order of the component.",
+						},
+					},
+				},
+			},
+			"component_groups": schema.ListNestedAttribute{
+				Computed:    true,
+				Description: "Component groups for organizing components into named sections.",
+				NestedObject: schema.NestedAttributeObject{
+					Attributes: map[string]schema.Attribute{
+						"id": schema.StringAttribute{
+							Computed:    true,
+							Description: "The unique identifier of the component group.",
+						},
+						"name": schema.StringAttribute{
+							Computed:    true,
+							Description: "The display name of the component group.",
+						},
+						"order": schema.Int64Attribute{
+							Computed:    true,
+							Description: "Display order of the component group.",
 						},
 					},
 				},
@@ -117,6 +144,14 @@ func (d *StatusPageDataSource) Schema(_ context.Context, _ datasource.SchemaRequ
 			"logo_url": schema.StringAttribute{
 				Computed:    true,
 				Description: "URL of the logo displayed on the status page.",
+			},
+			"webhook_url": schema.StringAttribute{
+				Computed:    true,
+				Description: "Webhook URL for incident notifications.",
+			},
+			"email_subscribers_enabled": schema.BoolAttribute{
+				Computed:    true,
+				Description: "Whether email subscriber notifications are enabled.",
 			},
 			"is_public": schema.BoolAttribute{
 				Computed:    true,
@@ -209,13 +244,14 @@ func (d *StatusPageDataSource) Read(ctx context.Context, req datasource.ReadRequ
 
 func statusPageToDataSourceModel(p StatusPage) StatusPageDataSourceModel {
 	model := StatusPageDataSourceModel{
-		ID:        types.StringValue(p.ID),
-		Name:      types.StringValue(p.Name),
-		Slug:      types.StringValue(p.Slug),
-		Theme:     types.StringValue(p.Theme),
-		IsPublic:  types.BoolValue(p.IsPublic),
-		CreatedAt: types.StringValue(p.CreatedAt),
-		UpdatedAt: types.StringValue(p.UpdatedAt),
+		ID:                      types.StringValue(p.ID),
+		Name:                    types.StringValue(p.Name),
+		Slug:                    types.StringValue(p.Slug),
+		Theme:                   types.StringValue(p.Theme),
+		IsPublic:                types.BoolValue(p.IsPublic),
+		EmailSubscribersEnabled: types.BoolValue(p.EmailSubscribersEnabled),
+		CreatedAt:               types.StringValue(p.CreatedAt),
+		UpdatedAt:               types.StringValue(p.UpdatedAt),
 	}
 
 	if p.CustomDomain != "" {
@@ -241,6 +277,13 @@ func statusPageToDataSourceModel(p StatusPage) StatusPageDataSourceModel {
 		model.LogoURL = types.StringNull()
 	}
 
+	if p.WebhookURL != "" {
+		model.WebhookURL = types.StringValue(p.WebhookURL)
+	} else {
+		model.WebhookURL = types.StringNull()
+	}
+
+	// Components
 	if len(p.Components) > 0 {
 		var compValues []attr.Value
 		for _, c := range p.Components {
@@ -248,17 +291,37 @@ func statusPageToDataSourceModel(p StatusPage) StatusPageDataSourceModel {
 			if c.Description != "" {
 				desc = types.StringValue(c.Description)
 			}
+			groupID := types.StringNull()
+			if c.GroupID != "" {
+				groupID = types.StringValue(c.GroupID)
+			}
 			compValues = append(compValues, types.ObjectValueMust(componentAttrTypes, map[string]attr.Value{
 				"id":           types.StringValue(c.ID),
 				"monitor_id":   types.StringValue(c.MonitorID),
 				"display_name": types.StringValue(c.DisplayName),
 				"description":  desc,
+				"group_id":     groupID,
 				"order":        types.Int64Value(int64(c.Order)),
 			}))
 		}
 		model.Components = types.ListValueMust(types.ObjectType{AttrTypes: componentAttrTypes}, compValues)
 	} else {
 		model.Components = types.ListValueMust(types.ObjectType{AttrTypes: componentAttrTypes}, []attr.Value{})
+	}
+
+	// Component groups
+	if len(p.ComponentGroups) > 0 {
+		var groupValues []attr.Value
+		for _, g := range p.ComponentGroups {
+			groupValues = append(groupValues, types.ObjectValueMust(componentGroupAttrTypes, map[string]attr.Value{
+				"id":    types.StringValue(g.ID),
+				"name":  types.StringValue(g.Name),
+				"order": types.Int64Value(int64(g.Order)),
+			}))
+		}
+		model.ComponentGroups = types.ListValueMust(types.ObjectType{AttrTypes: componentGroupAttrTypes}, groupValues)
+	} else {
+		model.ComponentGroups = types.ListValueMust(types.ObjectType{AttrTypes: componentGroupAttrTypes}, []attr.Value{})
 	}
 
 	return model
