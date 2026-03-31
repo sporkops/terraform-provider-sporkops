@@ -2,20 +2,20 @@ package provider
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+	"github.com/sporkops/cli/pkg/spork"
 )
 
 var _ datasource.DataSource = &StatusPageDataSource{}
 var _ datasource.DataSourceWithConfigure = &StatusPageDataSource{}
 
 type StatusPageDataSource struct {
-	client *SporkClient
+	client *spork.Client
 }
 
 type StatusPageDataSourceModel struct {
@@ -178,11 +178,11 @@ func (d *StatusPageDataSource) Configure(_ context.Context, req datasource.Confi
 		return
 	}
 
-	client, ok := req.ProviderData.(*SporkClient)
+	client, ok := req.ProviderData.(*spork.Client)
 	if !ok {
 		resp.Diagnostics.AddError(
 			"Unexpected Data Source Configure Type",
-			"Expected *SporkClient, got something else. Please report this issue to the provider developers.",
+			"Expected *spork.Client, got something else. Please report this issue to the provider developers.",
 		)
 		return
 	}
@@ -197,12 +197,12 @@ func (d *StatusPageDataSource) Read(ctx context.Context, req datasource.ReadRequ
 		return
 	}
 
-	var result *StatusPage
+	var result *spork.StatusPage
 
 	if !config.ID.IsNull() && config.ID.ValueString() != "" {
 		r, err := d.client.GetStatusPage(ctx, config.ID.ValueString())
 		if err != nil {
-			if errors.Is(err, ErrNotFound) {
+			if spork.IsNotFound(err) {
 				resp.Diagnostics.AddError("Status Page Not Found", "No status page found with ID: "+config.ID.ValueString())
 				return
 			}
@@ -216,7 +216,7 @@ func (d *StatusPageDataSource) Read(ctx context.Context, req datasource.ReadRequ
 			resp.Diagnostics.AddError("Error listing status pages", err.Error())
 			return
 		}
-		var matches []StatusPage
+		var matches []spork.StatusPage
 		for _, p := range pages {
 			if p.Name == config.Name.ValueString() {
 				matches = append(matches, p)
@@ -246,7 +246,7 @@ func (d *StatusPageDataSource) Read(ctx context.Context, req datasource.ReadRequ
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 
-func statusPageToDataSourceModel(p StatusPage) StatusPageDataSourceModel {
+func statusPageToDataSourceModel(p spork.StatusPage) StatusPageDataSourceModel {
 	model := StatusPageDataSourceModel{
 		ID:                      types.StringValue(p.ID),
 		Name:                    types.StringValue(p.Name),

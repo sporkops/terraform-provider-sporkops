@@ -2,19 +2,19 @@ package provider
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+	"github.com/sporkops/cli/pkg/spork"
 )
 
 var _ datasource.DataSource = &AlertChannelDataSource{}
 var _ datasource.DataSourceWithConfigure = &AlertChannelDataSource{}
 
 type AlertChannelDataSource struct {
-	client *SporkClient
+	client *spork.Client
 }
 
 type AlertChannelDataSourceModel struct {
@@ -76,11 +76,11 @@ func (d *AlertChannelDataSource) Configure(_ context.Context, req datasource.Con
 		return
 	}
 
-	client, ok := req.ProviderData.(*SporkClient)
+	client, ok := req.ProviderData.(*spork.Client)
 	if !ok {
 		resp.Diagnostics.AddError(
 			"Unexpected Data Source Configure Type",
-			"Expected *SporkClient, got something else. Please report this issue to the provider developers.",
+			"Expected *spork.Client, got something else. Please report this issue to the provider developers.",
 		)
 		return
 	}
@@ -95,13 +95,13 @@ func (d *AlertChannelDataSource) Read(ctx context.Context, req datasource.ReadRe
 		return
 	}
 
-	var result *AlertChannel
+	var result *spork.AlertChannel
 
 	if !config.ID.IsNull() && config.ID.ValueString() != "" {
 		// Lookup by ID
 		r, err := d.client.GetAlertChannel(ctx, config.ID.ValueString())
 		if err != nil {
-			if errors.Is(err, ErrNotFound) {
+			if spork.IsNotFound(err) {
 				resp.Diagnostics.AddError("Alert Channel Not Found", "No alert channel found with ID: "+config.ID.ValueString())
 				return
 			}
@@ -116,7 +116,7 @@ func (d *AlertChannelDataSource) Read(ctx context.Context, req datasource.ReadRe
 			resp.Diagnostics.AddError("Error listing alert channels", err.Error())
 			return
 		}
-		var matches []AlertChannel
+		var matches []spork.AlertChannel
 		for _, c := range channels {
 			if c.Name == config.Name.ValueString() {
 				matches = append(matches, c)

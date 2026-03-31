@@ -10,6 +10,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/provider/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+	"github.com/sporkops/cli/pkg/spork"
 )
 
 var _ provider.Provider = &SporkProvider{}
@@ -96,7 +97,11 @@ func (p *SporkProvider) Configure(ctx context.Context, req provider.ConfigureReq
 		)
 	}
 
-	client := NewSporkClient(baseURL, apiKey, p.version)
+	client := spork.NewClient(
+		spork.WithAPIKey(apiKey),
+		spork.WithBaseURL(baseURL),
+		spork.WithUserAgent("spork-terraform/"+p.version),
+	)
 
 	resp.DataSourceData = client
 	resp.ResourceData = client

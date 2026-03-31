@@ -2,7 +2,6 @@ package provider
 
 import (
 	"context"
-	"errors"
 	"regexp"
 
 	"github.com/hashicorp/terraform-plugin-framework-validators/int64validator"
@@ -18,6 +17,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+	"github.com/sporkops/cli/pkg/spork"
 )
 
 var (
@@ -28,7 +28,7 @@ var (
 )
 
 type MonitorResource struct {
-	client *SporkClient
+	client *spork.Client
 }
 
 type MonitorResourceModel struct {
@@ -212,11 +212,11 @@ func (r *MonitorResource) Configure(_ context.Context, req resource.ConfigureReq
 		return
 	}
 
-	client, ok := req.ProviderData.(*SporkClient)
+	client, ok := req.ProviderData.(*spork.Client)
 	if !ok {
 		resp.Diagnostics.AddError(
 			"Unexpected Resource Configure Type",
-			"Expected *SporkClient, got something else. Please report this issue to the provider developers.",
+			"Expected *spork.Client, got something else. Please report this issue to the provider developers.",
 		)
 		return
 	}
@@ -233,7 +233,7 @@ func (r *MonitorResource) Create(ctx context.Context, req resource.CreateRequest
 
 	apiMonitor := monitorFromModel(ctx, plan)
 
-	result, err := r.client.CreateMonitor(ctx, apiMonitor)
+	result, err := r.client.CreateMonitor(ctx, &apiMonitor)
 	if err != nil {
 		resp.Diagnostics.AddError("Error creating monitor", err.Error())
 		return
@@ -252,7 +252,7 @@ func (r *MonitorResource) Read(ctx context.Context, req resource.ReadRequest, re
 
 	result, err := r.client.GetMonitor(ctx, state.ID.ValueString())
 	if err != nil {
-		if errors.Is(err, ErrNotFound) {
+		if spork.IsNotFound(err) {
 			resp.State.RemoveResource(ctx)
 			return
 		}
@@ -279,7 +279,7 @@ func (r *MonitorResource) Update(ctx context.Context, req resource.UpdateRequest
 
 	apiMonitor := monitorFromModel(ctx, plan)
 
-	result, err := r.client.UpdateMonitor(ctx, state.ID.ValueString(), apiMonitor)
+	result, err := r.client.UpdateMonitor(ctx, state.ID.ValueString(), &apiMonitor)
 	if err != nil {
 		resp.Diagnostics.AddError("Error updating monitor", err.Error())
 		return
@@ -297,7 +297,7 @@ func (r *MonitorResource) Delete(ctx context.Context, req resource.DeleteRequest
 	}
 
 	err := r.client.DeleteMonitor(ctx, state.ID.ValueString())
-	if err != nil && !errors.Is(err, ErrNotFound) {
+	if err != nil && !spork.IsNotFound(err) {
 		resp.Diagnostics.AddError("Error deleting monitor", err.Error())
 	}
 }
@@ -354,8 +354,9 @@ func (r *MonitorResource) ImportState(ctx context.Context, req resource.ImportSt
 
 // Conversion helpers
 
-func monitorFromModel(ctx context.Context, model MonitorResourceModel) Monitor {
-	mon := Monitor{
+func monitorFromModel(ctx context.Context, model MonitorResourceModel) spork.Monitor {
+	paused := model.Paused.ValueBool()
+	mon := spork.Monitor{
 		Target:         model.Target.ValueString(),
 		Name:           model.Name.ValueString(),
 		Type:           model.Type.ValueString(),
@@ -363,7 +364,7 @@ func monitorFromModel(ctx context.Context, model MonitorResourceModel) Monitor {
 		ExpectedStatus: int(model.ExpectedStatus.ValueInt64()),
 		Interval:       int(model.Interval.ValueInt64()),
 		Timeout:        int(model.Timeout.ValueInt64()),
-		Paused:         model.Paused.ValueBool(),
+		Paused:         &paused,
 		Body:           model.Body.ValueString(),
 		Keyword:        model.Keyword.ValueString(),
 		KeywordType:    model.KeywordType.ValueString(),
@@ -397,7 +398,7 @@ func monitorFromModel(ctx context.Context, model MonitorResourceModel) Monitor {
 	return mon
 }
 
-func monitorToModel(ctx context.Context, m Monitor) MonitorResourceModel {
+func monitorToModel(ctx context.Context, m spork.Monitor) MonitorResourceModel {
 	regions, _ := types.ListValueFrom(ctx, types.StringType, m.Regions)
 	if m.Regions == nil {
 		regions, _ = types.ListValueFrom(ctx, types.StringType, []string{"us-central1"})
@@ -450,7 +451,7 @@ func monitorToModel(ctx context.Context, m Monitor) MonitorResourceModel {
 		Regions:         regions,
 		AlertChannelIDs: alertChannelIDs,
 		Tags:            tags,
-		Paused:          types.BoolValue(m.Paused),
+		Paused:          types.BoolValue(m.Paused != nil && *m.Paused),
 		Status:          types.StringValue(m.Status),
 		Headers:         headers,
 		Body:            body,

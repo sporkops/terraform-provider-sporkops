@@ -2,7 +2,6 @@ package provider
 
 import (
 	"context"
-	"errors"
 
 	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/path"
@@ -13,6 +12,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+	"github.com/sporkops/cli/pkg/spork"
 )
 
 var (
@@ -22,7 +22,7 @@ var (
 )
 
 type AlertChannelResource struct {
-	client *SporkClient
+	client *spork.Client
 }
 
 type AlertChannelResourceModel struct {
@@ -103,11 +103,11 @@ func (r *AlertChannelResource) Configure(_ context.Context, req resource.Configu
 		return
 	}
 
-	client, ok := req.ProviderData.(*SporkClient)
+	client, ok := req.ProviderData.(*spork.Client)
 	if !ok {
 		resp.Diagnostics.AddError(
 			"Unexpected Resource Configure Type",
-			"Expected *SporkClient, got something else. Please report this issue to the provider developers.",
+			"Expected *spork.Client, got something else. Please report this issue to the provider developers.",
 		)
 		return
 	}
@@ -122,7 +122,8 @@ func (r *AlertChannelResource) Create(ctx context.Context, req resource.CreateRe
 		return
 	}
 
-	result, err := r.client.CreateAlertChannel(ctx, alertChannelFromModel(ctx, plan))
+	apiChannel := alertChannelFromModel(ctx, plan)
+	result, err := r.client.CreateAlertChannel(ctx, &apiChannel)
 	if err != nil {
 		resp.Diagnostics.AddError("Error creating alert channel", err.Error())
 		return
@@ -143,7 +144,7 @@ func (r *AlertChannelResource) Read(ctx context.Context, req resource.ReadReques
 
 	result, err := r.client.GetAlertChannel(ctx, state.ID.ValueString())
 	if err != nil {
-		if errors.Is(err, ErrNotFound) {
+		if spork.IsNotFound(err) {
 			resp.State.RemoveResource(ctx)
 			return
 		}
@@ -169,7 +170,8 @@ func (r *AlertChannelResource) Update(ctx context.Context, req resource.UpdateRe
 		return
 	}
 
-	result, err := r.client.UpdateAlertChannel(ctx, state.ID.ValueString(), alertChannelFromModel(ctx, plan))
+	apiChannel := alertChannelFromModel(ctx, plan)
+	result, err := r.client.UpdateAlertChannel(ctx, state.ID.ValueString(), &apiChannel)
 	if err != nil {
 		resp.Diagnostics.AddError("Error updating alert channel", err.Error())
 		return
@@ -189,7 +191,7 @@ func (r *AlertChannelResource) Delete(ctx context.Context, req resource.DeleteRe
 	}
 
 	err := r.client.DeleteAlertChannel(ctx, state.ID.ValueString())
-	if err != nil && !errors.Is(err, ErrNotFound) {
+	if err != nil && !spork.IsNotFound(err) {
 		resp.Diagnostics.AddError("Error deleting alert channel", err.Error())
 	}
 }
@@ -201,8 +203,8 @@ func (r *AlertChannelResource) ImportState(ctx context.Context, req resource.Imp
 // Conversion helpers
 
 // alertChannelFromModel serializes a Terraform model to the API request struct.
-func alertChannelFromModel(ctx context.Context, model AlertChannelResourceModel) AlertChannel {
-	channel := AlertChannel{
+func alertChannelFromModel(ctx context.Context, model AlertChannelResourceModel) spork.AlertChannel {
+	channel := spork.AlertChannel{
 		Name:   model.Name.ValueString(),
 		Type:   model.Type.ValueString(),
 		Config: make(map[string]string),
@@ -218,7 +220,7 @@ func alertChannelFromModel(ctx context.Context, model AlertChannelResourceModel)
 // alertChannelToModel deserializes an API AlertChannel into a Terraform model.
 // fallback provides current state/plan values for sensitive fields that the API
 // redacts on reads (bot_token, integration_key, url, etc.).
-func alertChannelToModel(ctx context.Context, c AlertChannel, fallback *AlertChannelResourceModel) AlertChannelResourceModel {
+func alertChannelToModel(ctx context.Context, c spork.AlertChannel, fallback *AlertChannelResourceModel) AlertChannelResourceModel {
 	model := AlertChannelResourceModel{
 		ID:       types.StringValue(c.ID),
 		Name:     types.StringValue(c.Name),
