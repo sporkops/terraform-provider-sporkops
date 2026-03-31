@@ -15,11 +15,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/checkout@v4
-        with:
-          repository: sporkops/cli
-          ref: ${{ github.head_ref || github.ref_name }}
-          path: _cli
       - uses: actions/setup-go@v5
         with:
           go-version-file: 'go.mod'
@@ -31,11 +26,6 @@ jobs:
     needs: [build]
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/checkout@v4
-        with:
-          repository: sporkops/cli
-          ref: ${{ github.head_ref || github.ref_name }}
-          path: _cli
       - uses: actions/setup-go@v5
         with:
           go-version-file: 'go.mod'
@@ -48,11 +38,6 @@ jobs:
     needs: [build, test]
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/checkout@v4
-        with:
-          repository: sporkops/cli
-          ref: ${{ github.head_ref || github.ref_name }}
-          path: _cli
       - uses: actions/setup-go@v5
         with:
           go-version-file: 'go.mod'
