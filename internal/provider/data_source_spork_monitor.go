@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
+	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/sporkops/spork-go"
@@ -219,24 +220,30 @@ func (d *MonitorDataSource) Read(ctx context.Context, req datasource.ReadRequest
 		return
 	}
 
-	regions, _ := types.ListValueFrom(ctx, types.StringType, result.Regions)
+	var convDiags diag.Diagnostics
+	regions, convDiags := types.ListValueFrom(ctx, types.StringType, result.Regions)
+	resp.Diagnostics.Append(convDiags...)
 	if result.Regions == nil {
-		regions, _ = types.ListValueFrom(ctx, types.StringType, []string{})
+		regions, convDiags = types.ListValueFrom(ctx, types.StringType, []string{})
+		resp.Diagnostics.Append(convDiags...)
 	}
 
 	alertChannelIDs := types.ListNull(types.StringType)
 	if result.AlertChannelIDs != nil {
-		alertChannelIDs, _ = types.ListValueFrom(ctx, types.StringType, result.AlertChannelIDs)
+		alertChannelIDs, convDiags = types.ListValueFrom(ctx, types.StringType, result.AlertChannelIDs)
+		resp.Diagnostics.Append(convDiags...)
 	}
 
 	tags := types.ListNull(types.StringType)
 	if result.Tags != nil {
-		tags, _ = types.ListValueFrom(ctx, types.StringType, result.Tags)
+		tags, convDiags = types.ListValueFrom(ctx, types.StringType, result.Tags)
+		resp.Diagnostics.Append(convDiags...)
 	}
 
 	headers := types.MapNull(types.StringType)
 	if result.Headers != nil {
-		headers, _ = types.MapValueFrom(ctx, types.StringType, result.Headers)
+		headers, convDiags = types.MapValueFrom(ctx, types.StringType, result.Headers)
+		resp.Diagnostics.Append(convDiags...)
 	}
 
 	state := MonitorDataSourceModel{

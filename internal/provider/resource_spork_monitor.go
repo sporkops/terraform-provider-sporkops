@@ -7,6 +7,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework-validators/int64validator"
 	"github.com/hashicorp/terraform-plugin-framework-validators/listvalidator"
 	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
+	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
@@ -126,6 +127,7 @@ func (r *MonitorResource) Schema(_ context.Context, _ resource.SchemaRequest, re
 				MarkdownDescription: "Check interval in seconds (`60`-`86400`, must be a multiple of 60). Default: `60`.",
 				Validators: []validator.Int64{
 					int64validator.Between(60, 86400),
+					MultipleOf(60),
 				},
 			},
 			"timeout": schema.Int64Attribute{
@@ -231,7 +233,10 @@ func (r *MonitorResource) Create(ctx context.Context, req resource.CreateRequest
 		return
 	}
 
-	apiMonitor := monitorFromModel(ctx, plan)
+	apiMonitor := monitorFromModel(ctx, plan, &resp.Diagnostics)
+	if resp.Diagnostics.HasError() {
+		return
+	}
 
 	result, err := r.client.CreateMonitor(ctx, &apiMonitor)
 	if err != nil {
@@ -239,7 +244,7 @@ func (r *MonitorResource) Create(ctx context.Context, req resource.CreateRequest
 		return
 	}
 
-	state := monitorToModel(ctx, *result)
+	state := monitorToModel(ctx, *result, &resp.Diagnostics)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 
@@ -260,7 +265,7 @@ func (r *MonitorResource) Read(ctx context.Context, req resource.ReadRequest, re
 		return
 	}
 
-	newState := monitorToModel(ctx, *result)
+	newState := monitorToModel(ctx, *result, &resp.Diagnostics)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &newState)...)
 }
 
@@ -277,7 +282,10 @@ func (r *MonitorResource) Update(ctx context.Context, req resource.UpdateRequest
 		return
 	}
 
-	apiMonitor := monitorFromModel(ctx, plan)
+	apiMonitor := monitorFromModel(ctx, plan, &resp.Diagnostics)
+	if resp.Diagnostics.HasError() {
+		return
+	}
 
 	result, err := r.client.UpdateMonitor(ctx, state.ID.ValueString(), &apiMonitor)
 	if err != nil {
@@ -285,7 +293,7 @@ func (r *MonitorResource) Update(ctx context.Context, req resource.UpdateRequest
 		return
 	}
 
-	newState := monitorToModel(ctx, *result)
+	newState := monitorToModel(ctx, *result, &resp.Diagnostics)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &newState)...)
 }
 
@@ -354,7 +362,7 @@ func (r *MonitorResource) ImportState(ctx context.Context, req resource.ImportSt
 
 // Conversion helpers
 
-func monitorFromModel(ctx context.Context, model MonitorResourceModel) spork.Monitor {
+func monitorFromModel(ctx context.Context, model MonitorResourceModel, diags *diag.Diagnostics) spork.Monitor {
 	paused := model.Paused.ValueBool()
 	mon := spork.Monitor{
 		Target:         model.Target.ValueString(),
@@ -373,50 +381,56 @@ func monitorFromModel(ctx context.Context, model MonitorResourceModel) spork.Mon
 
 	if !model.Regions.IsNull() && !model.Regions.IsUnknown() {
 		var regions []string
-		model.Regions.ElementsAs(ctx, &regions, false)
+		diags.Append(model.Regions.ElementsAs(ctx, &regions, false)...)
 		mon.Regions = regions
 	}
 
 	if !model.AlertChannelIDs.IsNull() && !model.AlertChannelIDs.IsUnknown() {
 		var ids []string
-		model.AlertChannelIDs.ElementsAs(ctx, &ids, false)
+		diags.Append(model.AlertChannelIDs.ElementsAs(ctx, &ids, false)...)
 		mon.AlertChannelIDs = ids
 	}
 
 	if !model.Tags.IsNull() && !model.Tags.IsUnknown() {
 		var tags []string
-		model.Tags.ElementsAs(ctx, &tags, false)
+		diags.Append(model.Tags.ElementsAs(ctx, &tags, false)...)
 		mon.Tags = tags
 	}
 
 	if !model.Headers.IsNull() && !model.Headers.IsUnknown() {
 		var headers map[string]string
-		model.Headers.ElementsAs(ctx, &headers, false)
+		diags.Append(model.Headers.ElementsAs(ctx, &headers, false)...)
 		mon.Headers = headers
 	}
 
 	return mon
 }
 
-func monitorToModel(ctx context.Context, m spork.Monitor) MonitorResourceModel {
-	regions, _ := types.ListValueFrom(ctx, types.StringType, m.Regions)
+func monitorToModel(ctx context.Context, m spork.Monitor, diags *diag.Diagnostics) MonitorResourceModel {
+	var d diag.Diagnostics
+	regions, d := types.ListValueFrom(ctx, types.StringType, m.Regions)
+	diags.Append(d...)
 	if m.Regions == nil {
-		regions, _ = types.ListValueFrom(ctx, types.StringType, []string{"us-central1"})
+		regions, d = types.ListValueFrom(ctx, types.StringType, []string{"us-central1"})
+		diags.Append(d...)
 	}
 
 	alertChannelIDs := types.ListNull(types.StringType)
 	if m.AlertChannelIDs != nil {
-		alertChannelIDs, _ = types.ListValueFrom(ctx, types.StringType, m.AlertChannelIDs)
+		alertChannelIDs, d = types.ListValueFrom(ctx, types.StringType, m.AlertChannelIDs)
+		diags.Append(d...)
 	}
 
 	tags := types.ListNull(types.StringType)
 	if m.Tags != nil {
-		tags, _ = types.ListValueFrom(ctx, types.StringType, m.Tags)
+		tags, d = types.ListValueFrom(ctx, types.StringType, m.Tags)
+		diags.Append(d...)
 	}
 
 	headers := types.MapNull(types.StringType)
 	if m.Headers != nil {
-		headers, _ = types.MapValueFrom(ctx, types.StringType, m.Headers)
+		headers, d = types.MapValueFrom(ctx, types.StringType, m.Headers)
+		diags.Append(d...)
 	}
 
 	body := types.StringNull()
