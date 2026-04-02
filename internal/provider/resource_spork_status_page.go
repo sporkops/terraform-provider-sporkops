@@ -432,6 +432,7 @@ func (r *StatusPageResource) Update(ctx context.Context, req resource.UpdateRequ
 	}
 
 	newState := statusPageToModel(ctx, *result)
+	newState.Password = plan.Password
 	resp.Diagnostics.Append(resp.State.Set(ctx, &newState)...)
 }
 

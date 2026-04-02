@@ -5,6 +5,7 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/sporkops/spork-go"
 )
@@ -119,9 +120,11 @@ func (d *AlertChannelsDataSource) Read(ctx context.Context, req datasource.ReadR
 			continue
 		}
 
+		var convDiags diag.Diagnostics
 		configMap := types.MapNull(types.StringType)
 		if c.Config != nil {
-			configMap, _ = types.MapValueFrom(ctx, types.StringType, c.Config)
+			configMap, convDiags = types.MapValueFrom(ctx, types.StringType, c.Config)
+			resp.Diagnostics.Append(convDiags...)
 		}
 
 		results = append(results, AlertChannelDataSourceModel{
