@@ -54,7 +54,7 @@ type StatusPageComponentModel struct {
 	MonitorID   types.String `tfsdk:"monitor_id"`
 	DisplayName types.String `tfsdk:"display_name"`
 	Description types.String `tfsdk:"description"`
-	GroupID     types.String `tfsdk:"group_id"`
+	Group       types.String `tfsdk:"group"`
 	Order       types.Int64  `tfsdk:"order"`
 }
 
@@ -70,7 +70,7 @@ var componentAttrTypes = map[string]attr.Type{
 	"monitor_id":   types.StringType,
 	"display_name": types.StringType,
 	"description":  types.StringType,
-	"group_id":     types.StringType,
+	"group":        types.StringType,
 	"order":        types.Int64Type,
 }
 
@@ -143,10 +143,10 @@ func (r *StatusPageResource) Schema(_ context.Context, _ resource.SchemaRequest,
 							Optional:    true,
 							Description: "A description of the component.",
 						},
-						"group_id": schema.StringAttribute{
+						"group": schema.StringAttribute{
 							Optional:            true,
-							Description:         "The ID of the component group this component belongs to.",
-							MarkdownDescription: "The ID of the component group this component belongs to. Use the `id` from a `component_groups` entry.",
+							Description:         "The name of the component group this component belongs to.",
+							MarkdownDescription: "The name of the component group this component belongs to. Must match a `name` from a `component_groups` entry.",
 						},
 						"order": schema.Int64Attribute{
 							Optional:    true,
@@ -498,8 +498,8 @@ func statusPageFromModel(ctx context.Context, model StatusPageResourceModel) spo
 			if !c.Description.IsNull() && !c.Description.IsUnknown() {
 				comp.Description = c.Description.ValueString()
 			}
-			if !c.GroupID.IsNull() && !c.GroupID.IsUnknown() {
-				comp.GroupID = c.GroupID.ValueString()
+			if !c.Group.IsNull() && !c.Group.IsUnknown() {
+				comp.GroupName = c.Group.ValueString()
 			}
 			page.Components = append(page.Components, comp)
 		}
@@ -572,6 +572,12 @@ func statusPageToModel(_ context.Context, p spork.StatusPage) StatusPageResource
 		model.WebhookURL = types.StringNull()
 	}
 
+	// Build group ID -> name lookup from component groups
+	groupIDToName := make(map[string]string, len(p.ComponentGroups))
+	for _, g := range p.ComponentGroups {
+		groupIDToName[g.ID] = g.Name
+	}
+
 	// Components
 	if len(p.Components) > 0 {
 		var compValues []attr.Value
@@ -580,16 +586,18 @@ func statusPageToModel(_ context.Context, p spork.StatusPage) StatusPageResource
 			if c.Description != "" {
 				desc = types.StringValue(c.Description)
 			}
-			groupID := types.StringNull()
+			groupName := types.StringNull()
 			if c.GroupID != "" {
-				groupID = types.StringValue(c.GroupID)
+				if name, ok := groupIDToName[c.GroupID]; ok {
+					groupName = types.StringValue(name)
+				}
 			}
 			compValues = append(compValues, types.ObjectValueMust(componentAttrTypes, map[string]attr.Value{
 				"id":           types.StringValue(c.ID),
 				"monitor_id":   types.StringValue(c.MonitorID),
 				"display_name": types.StringValue(c.DisplayName),
 				"description":  desc,
-				"group_id":     groupID,
+				"group":        groupName,
 				"order":        types.Int64Value(int64(c.Order)),
 			}))
 		}

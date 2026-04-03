@@ -70,9 +70,9 @@ func (d *StatusPagesDataSource) Schema(_ context.Context, _ datasource.SchemaReq
 										Computed:    true,
 										Description: "A description of the component.",
 									},
-									"group_id": schema.StringAttribute{
+									"group": schema.StringAttribute{
 										Computed:    true,
-										Description: "The ID of the component group this component belongs to.",
+										Description: "The name of the component group this component belongs to.",
 									},
 									"order": schema.Int64Attribute{
 										Computed:    true,
