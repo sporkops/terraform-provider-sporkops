@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
@@ -302,13 +303,16 @@ func alertChannelToModel(ctx context.Context, c spork.AlertChannel, fallback *Al
 		model.Secret = types.StringValue("")
 	}
 
-	// For any keys present in fallback config but missing/empty in API response
-	// (redacted values), fall back to the state/plan values.
+	// For any keys present in fallback config but missing/redacted in API response,
+	// fall back to the state/plan values. The API redacts sensitive config values
+	// (webhook URLs are masked, secrets stripped) on GET, so we preserve the prior
+	// state to avoid spurious diffs.
 	if fallback != nil && !fallback.Config.IsNull() && !fallback.Config.IsUnknown() {
 		var fallbackConfig map[string]string
 		fallback.Config.ElementsAs(ctx, &fallbackConfig, false)
 		for k, v := range fallbackConfig {
-			if existing, ok := configData[k]; !ok || existing == "" {
+			existing, ok := configData[k]
+			if !ok || isRedacted(existing, v) {
 				configData[k] = v
 			}
 		}
@@ -319,4 +323,20 @@ func alertChannelToModel(ctx context.Context, c spork.AlertChannel, fallback *Al
 	model.Config = configMap
 
 	return model
+}
+
+// isRedacted reports whether apiValue looks like a redacted version of
+// stateValue. The API masks sensitive config fields on GET responses by
+// truncating them, inserting "..." placeholders, or stripping them entirely.
+func isRedacted(apiValue, stateValue string) bool {
+	if apiValue == "" {
+		return true
+	}
+	if strings.Contains(apiValue, "...") {
+		return true
+	}
+	if len(apiValue) < len(stateValue) {
+		return true
+	}
+	return false
 }
