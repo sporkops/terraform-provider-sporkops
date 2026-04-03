@@ -10,6 +10,8 @@ require (
 	github.com/sporkops/spork-go v0.1.0
 )
 
+replace github.com/sporkops/spork-go v0.1.0 => ./spork-go
+
 require (
 	github.com/ProtonMail/go-crypto v1.1.0-alpha.2 // indirect
 	github.com/agext/levenshtein v1.2.2 // indirect

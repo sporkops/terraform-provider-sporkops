@@ -86,9 +86,9 @@ func (d *StatusPageDataSource) Schema(_ context.Context, _ datasource.SchemaRequ
 							Computed:    true,
 							Description: "A description of the component.",
 						},
-						"group_id": schema.StringAttribute{
+						"group": schema.StringAttribute{
 							Computed:    true,
-							Description: "The ID of the component group this component belongs to.",
+							Description: "The name of the component group this component belongs to.",
 						},
 						"order": schema.Int64Attribute{
 							Computed:    true,
@@ -287,6 +287,12 @@ func statusPageToDataSourceModel(p spork.StatusPage) StatusPageDataSourceModel {
 		model.WebhookURL = types.StringNull()
 	}
 
+	// Build group ID -> name lookup from component groups
+	groupIDToName := make(map[string]string, len(p.ComponentGroups))
+	for _, g := range p.ComponentGroups {
+		groupIDToName[g.ID] = g.Name
+	}
+
 	// Components
 	if len(p.Components) > 0 {
 		var compValues []attr.Value
@@ -295,16 +301,18 @@ func statusPageToDataSourceModel(p spork.StatusPage) StatusPageDataSourceModel {
 			if c.Description != "" {
 				desc = types.StringValue(c.Description)
 			}
-			groupID := types.StringNull()
+			groupName := types.StringNull()
 			if c.GroupID != "" {
-				groupID = types.StringValue(c.GroupID)
+				if name, ok := groupIDToName[c.GroupID]; ok {
+					groupName = types.StringValue(name)
+				}
 			}
 			compValues = append(compValues, types.ObjectValueMust(componentAttrTypes, map[string]attr.Value{
 				"id":           types.StringValue(c.ID),
 				"monitor_id":   types.StringValue(c.MonitorID),
 				"display_name": types.StringValue(c.DisplayName),
 				"description":  desc,
-				"group_id":     groupID,
+				"group":        groupName,
 				"order":        types.Int64Value(int64(c.Order)),
 			}))
 		}

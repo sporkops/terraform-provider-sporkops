@@ -112,6 +112,64 @@ resource "spork_status_page" "test" {
 	})
 }
 
+func TestAccStatusPageResource_withComponentGroups(t *testing.T) {
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				Config: `
+resource "spork_monitor" "api" {
+  target = "https://httpbin.org/get"
+  name   = "TF Test API Monitor"
+  type   = "http"
+}
+
+resource "spork_monitor" "web" {
+  target = "https://httpbin.org/html"
+  name   = "TF Test Web Monitor"
+  type   = "http"
+}
+
+resource "spork_monitor" "db" {
+  target = "https://httpbin.org/status/200"
+  name   = "TF Test DB Monitor"
+  type   = "http"
+}
+
+resource "spork_status_page" "test" {
+  name = "TF Test Grouped Page"
+  slug = "tf-test-groups"
+
+  component_groups = [
+    { name = "Website", order = 0 },
+    { name = "Backend", order = 1 },
+  ]
+
+  components = [
+    { monitor_id = spork_monitor.api.id, display_name = "API",      group = "Backend", order = 0 },
+    { monitor_id = spork_monitor.web.id, display_name = "Homepage", group = "Website", order = 0 },
+    { monitor_id = spork_monitor.db.id,  display_name = "Database", group = "Backend", order = 1 },
+  ]
+}
+`,
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("spork_status_page.test", "component_groups.#", "2"),
+					resource.TestCheckResourceAttr("spork_status_page.test", "components.#", "3"),
+					resource.TestCheckResourceAttr("spork_status_page.test", "components.0.group", "Backend"),
+					resource.TestCheckResourceAttr("spork_status_page.test", "components.1.group", "Website"),
+					resource.TestCheckResourceAttr("spork_status_page.test", "components.2.group", "Backend"),
+				),
+			},
+			{
+				ResourceName:      "spork_status_page.test",
+				ImportState:       true,
+				ImportStateVerify: true,
+			},
+		},
+	})
+}
+
 // Data source tests
 
 func TestAccStatusPageDataSource_byID(t *testing.T) {
