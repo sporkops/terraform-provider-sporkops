@@ -38,7 +38,7 @@ resource "spork_status_page" "grouped" {
   components {
     monitor_id   = spork_monitor.api.id
     display_name = "API"
-    group_id     = "core-services"
+    group        = "Core Services"
     order        = 0
   }
 }
