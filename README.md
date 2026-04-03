@@ -13,8 +13,8 @@ Add uptime monitoring to your Terraform workflow. One resource block, real alert
 
 ```hcl
 resource "spork_monitor" "website" {
-  target   = "https://yoursite.com"
-  interval = 60
+  target = "https://yoursite.com"
+  name   = "Production Website"
 }
 ```
 
@@ -35,7 +35,7 @@ terraform {
   required_providers {
     spork = {
       source  = "sporkops/sporkops"
-      version = "~> 1.0"
+      version = "~> 0.6"
     }
   }
 }
@@ -81,13 +81,14 @@ Generate an API key from the Spork dashboard at [sporkops.com/settings/api-keys]
 
 - [`spork_monitor`](docs/resources/monitor.md) — Manage uptime monitors
 - [`spork_alert_channel`](docs/resources/alert_channel.md) — Manage alert channels
+- [`spork_status_page`](docs/resources/status_page.md) — Manage status pages
 
 ## Data Sources
 
 - [`spork_monitor`](docs/data-sources/monitor.md) — Read a monitor
-- [`spork_monitors`](docs/data-sources/monitors.md) — List all monitors
 - [`spork_alert_channel`](docs/data-sources/alert_channel.md) — Read an alert channel
-- [`spork_alert_channels`](docs/data-sources/alert_channels.md) — List all alert channels
+- [`spork_status_page`](docs/data-sources/status_page.md) — Read a status page
+- [`spork_status_pages`](docs/data-sources/status_pages.md) — List all status pages
 
 ## Prefer the CLI?
 
@@ -110,12 +111,6 @@ go build ./...
 ```shell
 export SPORK_API_KEY="your-api-key-here"
 TF_ACC=1 go test ./internal/provider/ -v -tags=acceptance -timeout 120m
-```
-
-### Installing Locally
-
-```shell
-make install
 ```
 
 ---
