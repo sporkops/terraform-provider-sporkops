@@ -41,4 +41,18 @@ resource "spork_status_page" "grouped" {
     group        = "Core Services"
     order        = 0
   }
+
+  components {
+    monitor_id   = spork_monitor.website.id
+    display_name = "Website"
+    group        = "Core Services"
+    order        = 1
+  }
+
+  components {
+    monitor_id   = spork_monitor.cdn.id
+    display_name = "CDN"
+    group        = "Supporting Services"
+    order        = 0
+  }
 }
