@@ -303,10 +303,7 @@ func alertChannelToModel(ctx context.Context, c spork.AlertChannel, fallback *Al
 		model.Secret = types.StringValue("")
 	}
 
-	// For any keys present in fallback config but missing/redacted in API response,
-	// fall back to the state/plan values. The API redacts sensitive config values
-	// (webhook URLs are masked, secrets stripped) on GET, so we preserve the prior
-	// state to avoid spurious diffs.
+	// Preserve state/plan values for config keys the API redacted on GET.
 	if fallback != nil && !fallback.Config.IsNull() && !fallback.Config.IsUnknown() {
 		var fallbackConfig map[string]string
 		fallback.Config.ElementsAs(ctx, &fallbackConfig, false)
@@ -332,10 +329,10 @@ func isRedacted(apiValue, stateValue string) bool {
 	if apiValue == "" {
 		return true
 	}
-	if strings.Contains(apiValue, "...") {
+	if len(apiValue) < len(stateValue) {
 		return true
 	}
-	if len(apiValue) < len(stateValue) {
+	if strings.Contains(apiValue, "...") {
 		return true
 	}
 	return false
