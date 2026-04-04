@@ -119,76 +119,6 @@ func (r *StatusPageResource) Schema(_ context.Context, _ resource.SchemaRequest,
 					),
 				},
 			},
-			"components": schema.ListNestedAttribute{
-				Optional:    true,
-				Description: "Components displayed on the status page. Each component maps a monitor to a display name.",
-				NestedObject: schema.NestedAttributeObject{
-					Attributes: map[string]schema.Attribute{
-						"id": schema.StringAttribute{
-							Computed:    true,
-							Description: "The unique identifier of the component.",
-							PlanModifiers: []planmodifier.String{
-								stringplanmodifier.UseStateForUnknown(),
-							},
-						},
-						"monitor_id": schema.StringAttribute{
-							Required:    true,
-							Description: "The ID of the monitor to display on the status page.",
-						},
-						"display_name": schema.StringAttribute{
-							Required:    true,
-							Description: "The display name shown on the status page for this component.",
-						},
-						"description": schema.StringAttribute{
-							Optional:    true,
-							Description: "A description of the component.",
-						},
-						"group": schema.StringAttribute{
-							Optional:            true,
-							Description:         "The name of the component group this component belongs to.",
-							MarkdownDescription: "The name of the component group this component belongs to. Must match a `name` from a `component_groups` entry.",
-						},
-						"order": schema.Int64Attribute{
-							Optional:    true,
-							Computed:    true,
-							Description: "Display order of the component on the status page.",
-						},
-					},
-				},
-			},
-			"component_groups": schema.ListNestedAttribute{
-				Optional:            true,
-				Description:         "Component groups for organizing components into named sections.",
-				MarkdownDescription: "Component groups for organizing components into named sections on the status page.",
-				NestedObject: schema.NestedAttributeObject{
-					Attributes: map[string]schema.Attribute{
-						"id": schema.StringAttribute{
-							Computed:    true,
-							Description: "The unique identifier of the component group.",
-							PlanModifiers: []planmodifier.String{
-								stringplanmodifier.UseStateForUnknown(),
-							},
-						},
-						"name": schema.StringAttribute{
-							Required:    true,
-							Description: "The display name of the component group.",
-						},
-						"description": schema.StringAttribute{
-							Optional:    true,
-							Computed:    true,
-							Description: "A description of the component group.",
-							PlanModifiers: []planmodifier.String{
-								stringplanmodifier.UseStateForUnknown(),
-							},
-						},
-						"order": schema.Int64Attribute{
-							Optional:    true,
-							Computed:    true,
-							Description: "Display order of the component group on the status page.",
-						},
-					},
-				},
-			},
 			"custom_domain": schema.StringAttribute{
 				Optional:            true,
 				Description:         "Custom domain for the status page.",
@@ -293,6 +223,77 @@ func (r *StatusPageResource) Schema(_ context.Context, _ resource.SchemaRequest,
 			"updated_at": schema.StringAttribute{
 				Computed:    true,
 				Description: "Timestamp when the status page was last updated.",
+			},
+		},
+		Blocks: map[string]schema.Block{
+			"components": schema.ListNestedBlock{
+				Description:         "Components displayed on the status page. Each component maps a monitor to a display name.",
+				MarkdownDescription: "Components displayed on the status page. Each component maps a monitor to a display name.",
+				NestedObject: schema.NestedBlockObject{
+					Attributes: map[string]schema.Attribute{
+						"id": schema.StringAttribute{
+							Computed:    true,
+							Description: "The unique identifier of the component.",
+							PlanModifiers: []planmodifier.String{
+								stringplanmodifier.UseStateForUnknown(),
+							},
+						},
+						"monitor_id": schema.StringAttribute{
+							Required:    true,
+							Description: "The ID of the monitor to display on the status page.",
+						},
+						"display_name": schema.StringAttribute{
+							Required:    true,
+							Description: "The display name shown on the status page for this component.",
+						},
+						"description": schema.StringAttribute{
+							Optional:    true,
+							Description: "A description of the component.",
+						},
+						"group": schema.StringAttribute{
+							Optional:            true,
+							Description:         "The name of the component group this component belongs to.",
+							MarkdownDescription: "The name of the component group this component belongs to. Must match a `name` from a `component_groups` entry.",
+						},
+						"order": schema.Int64Attribute{
+							Optional:    true,
+							Computed:    true,
+							Description: "Display order of the component on the status page.",
+						},
+					},
+				},
+			},
+			"component_groups": schema.ListNestedBlock{
+				Description:         "Component groups for organizing components into named sections.",
+				MarkdownDescription: "Component groups for organizing components into named sections on the status page.",
+				NestedObject: schema.NestedBlockObject{
+					Attributes: map[string]schema.Attribute{
+						"id": schema.StringAttribute{
+							Computed:    true,
+							Description: "The unique identifier of the component group.",
+							PlanModifiers: []planmodifier.String{
+								stringplanmodifier.UseStateForUnknown(),
+							},
+						},
+						"name": schema.StringAttribute{
+							Required:    true,
+							Description: "The display name of the component group.",
+						},
+						"description": schema.StringAttribute{
+							Optional:    true,
+							Computed:    true,
+							Description: "A description of the component group.",
+							PlanModifiers: []planmodifier.String{
+								stringplanmodifier.UseStateForUnknown(),
+							},
+						},
+						"order": schema.Int64Attribute{
+							Optional:    true,
+							Computed:    true,
+							Description: "Display order of the component group on the status page.",
+						},
+					},
+				},
 			},
 		},
 	}
@@ -603,7 +604,7 @@ func statusPageToModel(_ context.Context, p spork.StatusPage) StatusPageResource
 		}
 		model.Components = types.ListValueMust(types.ObjectType{AttrTypes: componentAttrTypes}, compValues)
 	} else {
-		model.Components = types.ListNull(types.ObjectType{AttrTypes: componentAttrTypes})
+		model.Components = types.ListValueMust(types.ObjectType{AttrTypes: componentAttrTypes}, []attr.Value{})
 	}
 
 	// Component groups
@@ -623,7 +624,7 @@ func statusPageToModel(_ context.Context, p spork.StatusPage) StatusPageResource
 		}
 		model.ComponentGroups = types.ListValueMust(types.ObjectType{AttrTypes: componentGroupAttrTypes}, groupValues)
 	} else {
-		model.ComponentGroups = types.ListNull(types.ObjectType{AttrTypes: componentGroupAttrTypes})
+		model.ComponentGroups = types.ListValueMust(types.ObjectType{AttrTypes: componentGroupAttrTypes}, []attr.Value{})
 	}
 
 	return model

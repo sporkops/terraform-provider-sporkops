@@ -92,13 +92,11 @@ resource "spork_status_page" "test" {
   name = "Test Status Page with Components"
   slug = "tf-test-components"
 
-  components = [
-    {
-      monitor_id   = spork_monitor.test.id
-      display_name = "API"
-      order        = 0
-    },
-  ]
+  components {
+    monitor_id   = spork_monitor.test.id
+    display_name = "API"
+    order        = 0
+  }
 }
 `,
 				Check: resource.ComposeAggregateTestCheckFunc(
@@ -141,16 +139,36 @@ resource "spork_status_page" "test" {
   name = "TF Test Grouped Page"
   slug = "tf-test-groups"
 
-  component_groups = [
-    { name = "Website", order = 0 },
-    { name = "Backend", order = 1 },
-  ]
+  component_groups {
+    name  = "Website"
+    order = 0
+  }
 
-  components = [
-    { monitor_id = spork_monitor.api.id, display_name = "API",      group = "Backend", order = 0 },
-    { monitor_id = spork_monitor.web.id, display_name = "Homepage", group = "Website", order = 0 },
-    { monitor_id = spork_monitor.db.id,  display_name = "Database", group = "Backend", order = 1 },
-  ]
+  component_groups {
+    name  = "Backend"
+    order = 1
+  }
+
+  components {
+    monitor_id   = spork_monitor.api.id
+    display_name = "API"
+    group        = "Backend"
+    order        = 0
+  }
+
+  components {
+    monitor_id   = spork_monitor.web.id
+    display_name = "Homepage"
+    group        = "Website"
+    order        = 0
+  }
+
+  components {
+    monitor_id   = spork_monitor.db.id
+    display_name = "Database"
+    group        = "Backend"
+    order        = 1
+  }
 }
 `,
 				Check: resource.ComposeAggregateTestCheckFunc(
