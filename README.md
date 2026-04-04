@@ -86,7 +86,9 @@ Generate an API key from the Spork dashboard at [sporkops.com/settings/api-keys]
 ## Data Sources
 
 - [`spork_monitor`](docs/data-sources/monitor.md) — Read a monitor
+- [`spork_monitors`](docs/data-sources/monitors.md) — List all monitors
 - [`spork_alert_channel`](docs/data-sources/alert_channel.md) — Read an alert channel
+- [`spork_alert_channels`](docs/data-sources/alert_channels.md) — List all alert channels
 - [`spork_status_page`](docs/data-sources/status_page.md) — Read a status page
 - [`spork_status_pages`](docs/data-sources/status_pages.md) — List all status pages
 

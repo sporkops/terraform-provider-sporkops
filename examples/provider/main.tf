@@ -2,7 +2,7 @@ terraform {
   required_providers {
     spork = {
       source  = "sporkops/sporkops"
-      version = "~> 1.0"
+      version = "~> 0.6"
     }
   }
 }

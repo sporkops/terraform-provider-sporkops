@@ -1,12 +1,12 @@
 ---
 page_title: "Provider: Spork"
 description: |-
-  The Spork provider is used to manage uptime monitors and alert channels.
+  The Spork provider is used to manage uptime monitors, alert channels, and status pages.
 ---
 
 # Spork Provider
 
-The Spork provider allows you to manage [Spork](https://sporkops.com) uptime monitors and alert channels using Terraform.
+The Spork provider allows you to manage [Spork](https://sporkops.com) uptime monitors, alert channels, and status pages using Terraform.
 
 ## Authentication
 
@@ -37,7 +37,7 @@ terraform {
   required_providers {
     spork = {
       source  = "sporkops/sporkops"
-      version = "~> 1.0"
+      version = "~> 0.6"
     }
   }
 }
