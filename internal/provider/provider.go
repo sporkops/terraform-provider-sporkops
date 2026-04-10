@@ -112,6 +112,7 @@ func (p *SporkProvider) Resources(_ context.Context) []func() resource.Resource 
 		NewMonitorResource,
 		NewAlertChannelResource,
 		NewStatusPageResource,
+		NewMemberResource,
 	}
 }
 
@@ -123,5 +124,7 @@ func (p *SporkProvider) DataSources(_ context.Context) []func() datasource.DataS
 		NewAlertChannelsDataSource,
 		NewStatusPageDataSource,
 		NewStatusPagesDataSource,
+		NewMembersDataSource,
+		NewOrganizationDataSource,
 	}
 }
