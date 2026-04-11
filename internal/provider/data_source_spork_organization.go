@@ -31,6 +31,7 @@ type SubscriptionDataSourceModel struct {
 	Entitlements      types.Map    `tfsdk:"entitlements"`
 	HasPaymentMethod  types.Bool   `tfsdk:"has_payment_method"`
 	CancelAtPeriodEnd types.Bool   `tfsdk:"cancel_at_period_end"`
+	CancelAt          types.String `tfsdk:"cancel_at"`
 	TrialEndsAt       types.String `tfsdk:"trial_ends_at"`
 }
 
@@ -89,6 +90,10 @@ func (d *OrganizationDataSource) Schema(_ context.Context, _ datasource.SchemaRe
 							Computed:    true,
 							Description: "Whether the subscription will cancel at the end of the billing period.",
 						},
+						"cancel_at": schema.StringAttribute{
+							Computed:    true,
+							Description: "Timestamp when the subscription will be cancelled, if applicable.",
+						},
 						"trial_ends_at": schema.StringAttribute{
 							Computed:    true,
 							Description: "Timestamp when the trial ends, if applicable.",
@@ -135,6 +140,10 @@ func (d *OrganizationDataSource) Read(ctx context.Context, req datasource.ReadRe
 		entitlements, diags := types.MapValueFrom(ctx, types.StringType, entitlementStrings)
 		resp.Diagnostics.Append(diags...)
 
+		cancelAt := types.StringNull()
+		if s.CancelAt != nil {
+			cancelAt = types.StringValue(s.CancelAt.String())
+		}
 		trialEndsAt := types.StringNull()
 		if s.TrialEndsAt != nil {
 			trialEndsAt = types.StringValue(s.TrialEndsAt.String())
@@ -146,6 +155,7 @@ func (d *OrganizationDataSource) Read(ctx context.Context, req datasource.ReadRe
 			Entitlements:      entitlements,
 			HasPaymentMethod:  types.BoolValue(s.HasPaymentMethod),
 			CancelAtPeriodEnd: types.BoolValue(s.CancelAtPeriodEnd),
+			CancelAt:          cancelAt,
 			TrialEndsAt:       trialEndsAt,
 		})
 	}
