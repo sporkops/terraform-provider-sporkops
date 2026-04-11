@@ -13,6 +13,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/boolplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64default"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringdefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
@@ -76,14 +77,8 @@ func (r *MonitorResource) Schema(_ context.Context, _ resource.SchemaRequest, re
 			},
 			"target": schema.StringAttribute{
 				Required:            true,
-				Description:         "The URL to monitor. Must start with http:// or https://.",
-				MarkdownDescription: "The URL to monitor. Must start with `http://` or `https://`.",
-				Validators: []validator.String{
-					stringvalidator.RegexMatches(
-						regexp.MustCompile(`^https?://`),
-						"must start with http:// or https://",
-					),
-				},
+				Description:         "The target to monitor. For http, keyword, and ssl types this must be a URL starting with http:// or https://. For dns, tcp, and ping types this can be a hostname or IP.",
+				MarkdownDescription: "The target to monitor. For `http`, `keyword`, and `ssl` types this must be a URL starting with `http://` or `https://`. For `dns`, `tcp`, and `ping` types this can be a hostname or IP.",
 			},
 			"name": schema.StringAttribute{
 				Required:    true,
@@ -102,9 +97,11 @@ func (r *MonitorResource) Schema(_ context.Context, _ resource.SchemaRequest, re
 			"method": schema.StringAttribute{
 				Optional:            true,
 				Computed:            true,
-				Default:             stringdefault.StaticString("GET"),
-				Description:         "HTTP method to use for checks. Default: GET.",
-				MarkdownDescription: "HTTP method to use for checks. One of: `GET`, `HEAD`, `POST`, `PUT`. Default: `GET`.",
+				Description:         "HTTP method for http and keyword monitors. Server defaults to GET if not specified.",
+				MarkdownDescription: "HTTP method for `http` and `keyword` monitors. One of: `GET`, `HEAD`, `POST`, `PUT`. Server defaults to `GET` if not specified.",
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.UseStateForUnknown(),
+				},
 				Validators: []validator.String{
 					stringvalidator.OneOf("GET", "HEAD", "POST", "PUT"),
 				},
@@ -112,9 +109,11 @@ func (r *MonitorResource) Schema(_ context.Context, _ resource.SchemaRequest, re
 			"expected_status": schema.Int64Attribute{
 				Optional:            true,
 				Computed:            true,
-				Default:             int64default.StaticInt64(200),
-				Description:         "Expected HTTP status code. Default: 200.",
-				MarkdownDescription: "Expected HTTP status code (100-599). Default: `200`.",
+				Description:         "Expected HTTP status code for http and keyword monitors. Server defaults to 200 if not specified.",
+				MarkdownDescription: "Expected HTTP status code (100-599) for `http` and `keyword` monitors. Server defaults to `200` if not specified.",
+				PlanModifiers: []planmodifier.Int64{
+					int64planmodifier.UseStateForUnknown(),
+				},
 				Validators: []validator.Int64{
 					int64validator.Between(100, 599),
 				},
@@ -194,9 +193,11 @@ func (r *MonitorResource) Schema(_ context.Context, _ resource.SchemaRequest, re
 			"keyword_type": schema.StringAttribute{
 				Optional:            true,
 				Computed:            true,
-				Default:             stringdefault.StaticString("exists"),
-				Description:         "Whether the keyword should exist or not exist in the response.",
-				MarkdownDescription: "Whether the keyword should `exists` or `not_exists` in the response.",
+				Description:         "Whether the keyword should exist or not exist in the response. Only used for keyword monitors.",
+				MarkdownDescription: "Whether the keyword should `exists` or `not_exists` in the response. Only used for `keyword` monitors.",
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.UseStateForUnknown(),
+				},
 				Validators: []validator.String{
 					stringvalidator.OneOf("exists", "not_exists"),
 				},
@@ -204,8 +205,10 @@ func (r *MonitorResource) Schema(_ context.Context, _ resource.SchemaRequest, re
 			"ssl_warn_days": schema.Int64Attribute{
 				Optional:    true,
 				Computed:    true,
-				Default:     int64default.StaticInt64(14),
-				Description: "Number of days before SSL expiry to trigger a warning.",
+				Description: "Number of days before SSL expiry to trigger a warning. Only used for ssl monitors.",
+				PlanModifiers: []planmodifier.Int64{
+					int64planmodifier.UseStateForUnknown(),
+				},
 			},
 		},
 	}
@@ -356,6 +359,49 @@ func (r *MonitorResource) ValidateConfig(ctx context.Context, req resource.Valid
 			)
 		}
 	}
+
+	// Target format: require URL prefix for http/keyword/ssl only
+	if monType == "http" || monType == "keyword" || monType == "ssl" {
+		if !config.Target.IsNull() && !config.Target.IsUnknown() {
+			target := config.Target.ValueString()
+			if matched := regexp.MustCompile(`^https?://`).MatchString(target); !matched {
+				resp.Diagnostics.AddAttributeError(
+					path.Root("target"),
+					"Invalid Target Format",
+					"target must start with http:// or https:// for monitor type \""+monType+"\".",
+				)
+			}
+		}
+	}
+
+	// Warn about HTTP-specific fields on non-HTTP types
+	if monType == "dns" || monType == "tcp" || monType == "ping" {
+		if !config.Method.IsNull() && !config.Method.IsUnknown() {
+			resp.Diagnostics.AddAttributeWarning(
+				path.Root("method"),
+				"Unnecessary Attribute",
+				"method is only used for http and keyword monitors. It will be ignored for type \""+monType+"\".",
+			)
+		}
+		if !config.ExpectedStatus.IsNull() && !config.ExpectedStatus.IsUnknown() {
+			resp.Diagnostics.AddAttributeWarning(
+				path.Root("expected_status"),
+				"Unnecessary Attribute",
+				"expected_status is only used for http and keyword monitors. It will be ignored for type \""+monType+"\".",
+			)
+		}
+	}
+
+	// Warn about ssl_warn_days on non-SSL types
+	if monType != "ssl" && monType != "" {
+		if !config.SSLWarnDays.IsNull() && !config.SSLWarnDays.IsUnknown() {
+			resp.Diagnostics.AddAttributeWarning(
+				path.Root("ssl_warn_days"),
+				"Unnecessary Attribute",
+				"ssl_warn_days is only used when type is \"ssl\". It will be ignored for type \""+monType+"\".",
+			)
+		}
+	}
 }
 
 func (r *MonitorResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
@@ -367,18 +413,44 @@ func (r *MonitorResource) ImportState(ctx context.Context, req resource.ImportSt
 func monitorFromModel(ctx context.Context, model MonitorResourceModel, diags *diag.Diagnostics) spork.Monitor {
 	paused := model.Paused.ValueBool()
 	mon := spork.Monitor{
-		Target:         model.Target.ValueString(),
-		Name:           model.Name.ValueString(),
-		Type:           model.Type.ValueString(),
-		Method:         model.Method.ValueString(),
-		ExpectedStatus: int(model.ExpectedStatus.ValueInt64()),
-		Interval:       int(model.Interval.ValueInt64()),
-		Timeout:        int(model.Timeout.ValueInt64()),
-		Paused:         &paused,
-		Body:           model.Body.ValueString(),
-		Keyword:        model.Keyword.ValueString(),
-		KeywordType:    model.KeywordType.ValueString(),
-		SSLWarnDays:    int(model.SSLWarnDays.ValueInt64()),
+		Target:   model.Target.ValueString(),
+		Name:     model.Name.ValueString(),
+		Type:     model.Type.ValueString(),
+		Interval: int(model.Interval.ValueInt64()),
+		Timeout:  int(model.Timeout.ValueInt64()),
+		Paused:   &paused,
+	}
+
+	monType := model.Type.ValueString()
+
+	// HTTP and keyword monitors use method, expected_status, body
+	if monType == "http" || monType == "keyword" {
+		if !model.Method.IsNull() && !model.Method.IsUnknown() {
+			mon.Method = model.Method.ValueString()
+		}
+		if !model.ExpectedStatus.IsNull() && !model.ExpectedStatus.IsUnknown() {
+			mon.ExpectedStatus = int(model.ExpectedStatus.ValueInt64())
+		}
+		if !model.Body.IsNull() && !model.Body.IsUnknown() {
+			mon.Body = model.Body.ValueString()
+		}
+	}
+
+	// Keyword-only fields
+	if monType == "keyword" {
+		if !model.Keyword.IsNull() && !model.Keyword.IsUnknown() {
+			mon.Keyword = model.Keyword.ValueString()
+		}
+		if !model.KeywordType.IsNull() && !model.KeywordType.IsUnknown() {
+			mon.KeywordType = model.KeywordType.ValueString()
+		}
+	}
+
+	// SSL-only fields
+	if monType == "ssl" {
+		if !model.SSLWarnDays.IsNull() && !model.SSLWarnDays.IsUnknown() {
+			mon.SSLWarnDays = int(model.SSLWarnDays.ValueInt64())
+		}
 	}
 
 	if !model.Regions.IsNull() && !model.Regions.IsUnknown() {
@@ -455,13 +527,23 @@ func monitorToModel(ctx context.Context, m spork.Monitor, diags *diag.Diagnostic
 		sslWarnDays = types.Int64Value(int64(m.SSLWarnDays))
 	}
 
+	method := types.StringNull()
+	if m.Method != "" {
+		method = types.StringValue(m.Method)
+	}
+
+	expectedStatus := types.Int64Null()
+	if m.ExpectedStatus != 0 {
+		expectedStatus = types.Int64Value(int64(m.ExpectedStatus))
+	}
+
 	return MonitorResourceModel{
 		ID:              types.StringValue(m.ID),
 		Target:          types.StringValue(m.Target),
 		Name:            types.StringValue(m.Name),
 		Type:            types.StringValue(m.Type),
-		Method:          types.StringValue(m.Method),
-		ExpectedStatus:  types.Int64Value(int64(m.ExpectedStatus)),
+		Method:          method,
+		ExpectedStatus:  expectedStatus,
 		Interval:        types.Int64Value(int64(m.Interval)),
 		Timeout:         types.Int64Value(int64(m.Timeout)),
 		Regions:         regions,
