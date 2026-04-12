@@ -183,7 +183,7 @@ func (d *MonitorDataSource) Read(ctx context.Context, req datasource.ReadRequest
 				resp.Diagnostics.AddError("Monitor Not Found", "No monitor found with ID: "+config.ID.ValueString())
 				return
 			}
-			resp.Diagnostics.AddError("Error reading monitor", err.Error())
+			addAPIError(&resp.Diagnostics, "Error reading monitor", err)
 			return
 		}
 		result = r
@@ -191,7 +191,7 @@ func (d *MonitorDataSource) Read(ctx context.Context, req datasource.ReadRequest
 		// Lookup by name
 		monitors, err := d.client.ListMonitors(ctx)
 		if err != nil {
-			resp.Diagnostics.AddError("Error listing monitors", err.Error())
+			addAPIError(&resp.Diagnostics, "Error listing monitors", err)
 			return
 		}
 		var matches []spork.Monitor

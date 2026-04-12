@@ -132,7 +132,7 @@ func (r *AlertChannelResource) Create(ctx context.Context, req resource.CreateRe
 	}
 	result, err := r.client.CreateAlertChannel(ctx, &apiChannel)
 	if err != nil {
-		resp.Diagnostics.AddError("Error creating alert channel", err.Error())
+		addAPIError(&resp.Diagnostics, "Error creating alert channel", err)
 		return
 	}
 
@@ -155,7 +155,7 @@ func (r *AlertChannelResource) Read(ctx context.Context, req resource.ReadReques
 			resp.State.RemoveResource(ctx)
 			return
 		}
-		resp.Diagnostics.AddError("Error reading alert channel", err.Error())
+		addAPIError(&resp.Diagnostics, "Error reading alert channel", err)
 		return
 	}
 
@@ -183,7 +183,7 @@ func (r *AlertChannelResource) Update(ctx context.Context, req resource.UpdateRe
 	}
 	result, err := r.client.UpdateAlertChannel(ctx, state.ID.ValueString(), &apiChannel)
 	if err != nil {
-		resp.Diagnostics.AddError("Error updating alert channel", err.Error())
+		addAPIError(&resp.Diagnostics, "Error updating alert channel", err)
 		return
 	}
 
@@ -202,7 +202,7 @@ func (r *AlertChannelResource) Delete(ctx context.Context, req resource.DeleteRe
 
 	err := r.client.DeleteAlertChannel(ctx, state.ID.ValueString())
 	if err != nil && !spork.IsNotFound(err) {
-		resp.Diagnostics.AddError("Error deleting alert channel", err.Error())
+		addAPIError(&resp.Diagnostics, "Error deleting alert channel", err)
 	}
 }
 

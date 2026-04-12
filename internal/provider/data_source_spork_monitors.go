@@ -173,7 +173,7 @@ func (d *MonitorsDataSource) Read(ctx context.Context, req datasource.ReadReques
 
 	monitors, err := d.client.ListMonitors(ctx)
 	if err != nil {
-		resp.Diagnostics.AddError("Error listing monitors", err.Error())
+		addAPIError(&resp.Diagnostics, "Error listing monitors", err)
 		return
 	}
 

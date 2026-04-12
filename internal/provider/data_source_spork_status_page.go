@@ -206,14 +206,14 @@ func (d *StatusPageDataSource) Read(ctx context.Context, req datasource.ReadRequ
 				resp.Diagnostics.AddError("Status Page Not Found", "No status page found with ID: "+config.ID.ValueString())
 				return
 			}
-			resp.Diagnostics.AddError("Error reading status page", err.Error())
+			addAPIError(&resp.Diagnostics, "Error reading status page", err)
 			return
 		}
 		result = r
 	} else if !config.Name.IsNull() && config.Name.ValueString() != "" {
 		pages, err := d.client.ListStatusPages(ctx)
 		if err != nil {
-			resp.Diagnostics.AddError("Error listing status pages", err.Error())
+			addAPIError(&resp.Diagnostics, "Error listing status pages", err)
 			return
 		}
 		var matches []spork.StatusPage

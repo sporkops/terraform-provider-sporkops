@@ -248,7 +248,7 @@ func (r *MonitorResource) Create(ctx context.Context, req resource.CreateRequest
 
 	result, err := r.client.CreateMonitor(ctx, &apiMonitor)
 	if err != nil {
-		resp.Diagnostics.AddError("Error creating monitor", err.Error())
+		addAPIError(&resp.Diagnostics, "Error creating monitor", err)
 		return
 	}
 
@@ -269,7 +269,7 @@ func (r *MonitorResource) Read(ctx context.Context, req resource.ReadRequest, re
 			resp.State.RemoveResource(ctx)
 			return
 		}
-		resp.Diagnostics.AddError("Error reading monitor", err.Error())
+		addAPIError(&resp.Diagnostics, "Error reading monitor", err)
 		return
 	}
 
@@ -297,7 +297,7 @@ func (r *MonitorResource) Update(ctx context.Context, req resource.UpdateRequest
 
 	result, err := r.client.UpdateMonitor(ctx, state.ID.ValueString(), &apiMonitor)
 	if err != nil {
-		resp.Diagnostics.AddError("Error updating monitor", err.Error())
+		addAPIError(&resp.Diagnostics, "Error updating monitor", err)
 		return
 	}
 
@@ -314,7 +314,7 @@ func (r *MonitorResource) Delete(ctx context.Context, req resource.DeleteRequest
 
 	err := r.client.DeleteMonitor(ctx, state.ID.ValueString())
 	if err != nil && !spork.IsNotFound(err) {
-		resp.Diagnostics.AddError("Error deleting monitor", err.Error())
+		addAPIError(&resp.Diagnostics, "Error deleting monitor", err)
 	}
 }
 

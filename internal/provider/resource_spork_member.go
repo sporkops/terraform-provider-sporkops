@@ -137,7 +137,7 @@ func (r *MemberResource) Create(ctx context.Context, req resource.CreateRequest,
 		Role:  plan.Role.ValueString(),
 	})
 	if err != nil {
-		resp.Diagnostics.AddError("Error inviting member", err.Error())
+		addAPIError(&resp.Diagnostics, "Error inviting member", err)
 		return
 	}
 
@@ -162,7 +162,7 @@ func (r *MemberResource) Read(ctx context.Context, req resource.ReadRequest, res
 
 	members, err := r.client.ListMembers(ctx)
 	if err != nil {
-		resp.Diagnostics.AddError("Error listing members", err.Error())
+		addAPIError(&resp.Diagnostics, "Error listing members", err)
 		return
 	}
 
@@ -209,7 +209,7 @@ func (r *MemberResource) Delete(ctx context.Context, req resource.DeleteRequest,
 
 	err := r.client.RemoveMember(ctx, state.ID.ValueString())
 	if err != nil && !spork.IsNotFound(err) {
-		resp.Diagnostics.AddError("Error removing member", err.Error())
+		addAPIError(&resp.Diagnostics, "Error removing member", err)
 	}
 }
 
