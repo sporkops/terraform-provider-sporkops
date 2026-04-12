@@ -112,7 +112,7 @@ func (p *SporkProvider) Resources(_ context.Context) []func() resource.Resource 
 		NewMonitorResource,
 		NewAlertChannelResource,
 		NewStatusPageResource,
-		NewMemberResource,
+		NewMemberInvitationResource,
 	}
 }
 

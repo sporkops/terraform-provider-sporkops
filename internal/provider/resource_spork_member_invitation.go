@@ -17,16 +17,16 @@ import (
 )
 
 var (
-	_ resource.Resource                = &MemberResource{}
-	_ resource.ResourceWithConfigure   = &MemberResource{}
-	_ resource.ResourceWithImportState = &MemberResource{}
+	_ resource.Resource                = &MemberInvitationResource{}
+	_ resource.ResourceWithConfigure   = &MemberInvitationResource{}
+	_ resource.ResourceWithImportState = &MemberInvitationResource{}
 )
 
-type MemberResource struct {
+type MemberInvitationResource struct {
 	client *spork.Client
 }
 
-type MemberResourceModel struct {
+type MemberInvitationResourceModel struct {
 	ID        types.String `tfsdk:"id"`
 	Email     types.String `tfsdk:"email"`
 	Role      types.String `tfsdk:"role"`
@@ -35,18 +35,18 @@ type MemberResourceModel struct {
 	UpdatedAt types.String `tfsdk:"updated_at"`
 }
 
-func NewMemberResource() resource.Resource {
-	return &MemberResource{}
+func NewMemberInvitationResource() resource.Resource {
+	return &MemberInvitationResource{}
 }
 
-func (r *MemberResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
-	resp.TypeName = req.ProviderTypeName + "_member"
+func (r *MemberInvitationResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
+	resp.TypeName = req.ProviderTypeName + "_member_invitation"
 }
 
-func (r *MemberResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
+func (r *MemberInvitationResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		Description:         "Manages a Spork organization member.",
-		MarkdownDescription: "Manages a [Spork](https://sporkops.com) organization member. Invites a user by email and manages their membership.",
+		Description:         "Manages a Spork organization member invitation.",
+		MarkdownDescription: "Manages a [Spork](https://sporkops.com) organization member **invitation**: creating the resource sends an invite to the specified email, reading it returns the invitation record (pending or accepted), deleting it revokes the invitation or removes the accepted member. Renamed from `spork_member` in an earlier release to reflect that the resource manages the invitation lifecycle, not a confirmed-member record.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
 				Computed:            true,
@@ -108,7 +108,7 @@ func (r *MemberResource) Schema(_ context.Context, _ resource.SchemaRequest, res
 	}
 }
 
-func (r *MemberResource) Configure(_ context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
+func (r *MemberInvitationResource) Configure(_ context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
 	if req.ProviderData == nil {
 		return
 	}
@@ -125,8 +125,8 @@ func (r *MemberResource) Configure(_ context.Context, req resource.ConfigureRequ
 	r.client = client
 }
 
-func (r *MemberResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
-	var plan MemberResourceModel
+func (r *MemberInvitationResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
+	var plan MemberInvitationResourceModel
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
 	if resp.Diagnostics.HasError() {
 		return
@@ -141,7 +141,7 @@ func (r *MemberResource) Create(ctx context.Context, req resource.CreateRequest,
 		return
 	}
 
-	state := MemberResourceModel{
+	state := MemberInvitationResourceModel{
 		ID:        types.StringValue(result.ID),
 		Email:     types.StringValue(result.Email),
 		Role:      types.StringValue(result.Role),
@@ -153,8 +153,8 @@ func (r *MemberResource) Create(ctx context.Context, req resource.CreateRequest,
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 
-func (r *MemberResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
-	var state MemberResourceModel
+func (r *MemberInvitationResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
+	var state MemberInvitationResourceModel
 	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
@@ -179,7 +179,7 @@ func (r *MemberResource) Read(ctx context.Context, req resource.ReadRequest, res
 		return
 	}
 
-	newState := MemberResourceModel{
+	newState := MemberInvitationResourceModel{
 		ID:        types.StringValue(found.ID),
 		Email:     types.StringValue(found.Email),
 		Role:      types.StringValue(found.Role),
@@ -191,17 +191,17 @@ func (r *MemberResource) Read(ctx context.Context, req resource.ReadRequest, res
 	resp.Diagnostics.Append(resp.State.Set(ctx, &newState)...)
 }
 
-func (r *MemberResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
+func (r *MemberInvitationResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
 	// No update supported. Email is ForceNew, role is set on create only.
 	resp.Diagnostics.AddError(
 		"Update Not Supported",
-		"The spork_member resource does not support updates. "+
+		"The spork_member_invitation resource does not support updates. "+
 			"Changes to email will trigger a replacement.",
 	)
 }
 
-func (r *MemberResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
-	var state MemberResourceModel
+func (r *MemberInvitationResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
+	var state MemberInvitationResourceModel
 	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
@@ -213,6 +213,6 @@ func (r *MemberResource) Delete(ctx context.Context, req resource.DeleteRequest,
 	}
 }
 
-func (r *MemberResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
+func (r *MemberInvitationResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
 	resource.ImportStatePassthroughID(ctx, path.Root("id"), req, resp)
 }
