@@ -2,7 +2,10 @@ package provider
 
 import (
 	"context"
-	"regexp"
+	"fmt"
+	"net"
+	"strconv"
+	"strings"
 
 	"github.com/hashicorp/terraform-plugin-framework-validators/int64validator"
 	"github.com/hashicorp/terraform-plugin-framework-validators/listvalidator"
@@ -77,8 +80,8 @@ func (r *MonitorResource) Schema(_ context.Context, _ resource.SchemaRequest, re
 			},
 			"target": schema.StringAttribute{
 				Required:            true,
-				Description:         "The target to monitor. For http, keyword, and ssl types this must be a URL starting with http:// or https://. For dns, tcp, and ping types this can be a hostname or IP.",
-				MarkdownDescription: "The target to monitor. For `http`, `keyword`, and `ssl` types this must be a URL starting with `http://` or `https://`. For `dns`, `tcp`, and `ping` types this can be a hostname or IP.",
+				Description:         "The target to monitor. For http, keyword, and ssl types: a URL starting with http:// or https://. For dns and ping: a bare hostname or IP (e.g., example.com). For tcp: host:port (e.g., example.com:443).",
+				MarkdownDescription: "The target to monitor.\n\n  * `http`, `keyword`, `ssl`: URL starting with `http://` or `https://` (e.g., `https://example.com`).\n  * `dns`, `ping`: bare hostname or IP (e.g., `example.com`). No URL scheme, path, or port.\n  * `tcp`: `host:port` (e.g., `example.com:443`).",
 			},
 			"name": schema.StringAttribute{
 				Required:    true,
@@ -360,17 +363,14 @@ func (r *MonitorResource) ValidateConfig(ctx context.Context, req resource.Valid
 		}
 	}
 
-	// Target format: require URL prefix for http/keyword/ssl only
-	if monType == "http" || monType == "keyword" || monType == "ssl" {
-		if !config.Target.IsNull() && !config.Target.IsUnknown() {
-			target := config.Target.ValueString()
-			if matched := regexp.MustCompile(`^https?://`).MatchString(target); !matched {
-				resp.Diagnostics.AddAttributeError(
-					path.Root("target"),
-					"Invalid Target Format",
-					"target must start with http:// or https:// for monitor type \""+monType+"\".",
-				)
-			}
+	// Target format: per-type rules (URL for http/keyword/ssl; bare hostname for dns/ping; host:port for tcp)
+	if !config.Target.IsNull() && !config.Target.IsUnknown() {
+		for _, msg := range validateMonitorTargetFormat(monType, config.Target.ValueString()) {
+			resp.Diagnostics.AddAttributeError(
+				path.Root("target"),
+				"Invalid Target Format",
+				msg,
+			)
 		}
 	}
 
@@ -557,4 +557,75 @@ func monitorToModel(ctx context.Context, m spork.Monitor, diags *diag.Diagnostic
 		KeywordType:     keywordType,
 		SSLWarnDays:     sslWarnDays,
 	}
+}
+
+// validateMonitorTargetFormat returns human-readable error messages for any
+// target format violations given the monitor type. An empty slice means the
+// target is valid. The rules mirror the server's per-type expectations:
+//
+//	http, keyword, ssl: URL starting with http:// or https://
+//	dns, ping:          bare hostname or IP — no scheme, no path, no port
+//	tcp:                host:port — no scheme, no path; port must be 1-65535
+//
+// Unknown monType (e.g. empty string when type uses a variable) returns no
+// errors; the type validator handles that separately.
+func validateMonitorTargetFormat(monType, target string) []string {
+	if target == "" {
+		return nil
+	}
+
+	switch monType {
+	case "http", "keyword", "ssl":
+		if !hasURLScheme(target) {
+			return []string{"target must start with http:// or https:// for monitor type \"" + monType + "\"."}
+		}
+		return nil
+
+	case "dns", "ping":
+		var issues []string
+		if hasURLScheme(target) {
+			issues = append(issues, "target for \""+monType+"\" monitors must be a bare hostname or IP (e.g., example.com) — URL schemes are not allowed.")
+		}
+		if strings.Contains(target, "/") {
+			issues = append(issues, "target for \""+monType+"\" monitors must not include a path.")
+		}
+		// Ports aren't meaningful for DNS resolution or ICMP. If SplitHostPort
+		// succeeds, the user included a port — reject it.
+		if _, _, err := net.SplitHostPort(target); err == nil {
+			issues = append(issues, "target for \""+monType+"\" monitors must not include a port.")
+		}
+		return issues
+
+	case "tcp":
+		var issues []string
+		if hasURLScheme(target) {
+			issues = append(issues, "target for \"tcp\" monitors must be host:port (e.g., example.com:443) — URL schemes are not allowed.")
+			return issues
+		}
+		if strings.Contains(target, "/") {
+			issues = append(issues, "target for \"tcp\" monitors must not include a path.")
+			return issues
+		}
+		host, portStr, err := net.SplitHostPort(target)
+		if err != nil {
+			return []string{"target for \"tcp\" monitors must be host:port (e.g., example.com:443)."}
+		}
+		if host == "" {
+			issues = append(issues, "target for \"tcp\" monitors must include a host before the port.")
+		}
+		port, perr := strconv.Atoi(portStr)
+		if perr != nil || port < 1 || port > 65535 {
+			issues = append(issues, fmt.Sprintf("target port %q for \"tcp\" monitors must be an integer between 1 and 65535.", portStr))
+		}
+		return issues
+	}
+
+	return nil
+}
+
+// hasURLScheme reports whether target starts with "http://" or "https://"
+// (case-insensitive).
+func hasURLScheme(target string) bool {
+	lower := strings.ToLower(target)
+	return strings.HasPrefix(lower, "http://") || strings.HasPrefix(lower, "https://")
 }

@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-framework/diag"
@@ -326,5 +327,75 @@ func TestMonitorToModel_http(t *testing.T) {
 	}
 	if model.ExpectedStatus.IsNull() || model.ExpectedStatus.ValueInt64() != 200 {
 		t.Errorf("ExpectedStatus = %v, want %d", model.ExpectedStatus, 200)
+	}
+}
+
+func TestValidateMonitorTargetFormat(t *testing.T) {
+	tests := []struct {
+		name         string
+		monType      string
+		target       string
+		wantErr      bool
+		wantContains string // substring expected in first error message, if wantErr
+	}{
+		// http / keyword / ssl — require URL scheme
+		{"http ok", "http", "https://example.com", false, ""},
+		{"http ok plain http", "http", "http://example.com", false, ""},
+		{"http missing scheme", "http", "example.com", true, "http://"},
+		{"keyword ok", "keyword", "https://example.com/health", false, ""},
+		{"keyword missing scheme", "keyword", "example.com", true, "http://"},
+		{"ssl ok", "ssl", "https://example.com", false, ""},
+		{"ssl missing scheme", "ssl", "example.com", true, "http://"},
+
+		// dns / ping — bare hostname only
+		{"dns ok hostname", "dns", "example.com", false, ""},
+		{"dns ok ip", "dns", "8.8.8.8", false, ""},
+		{"dns rejects https scheme", "dns", "https://example.com", true, "URL schemes are not allowed"},
+		{"dns rejects http scheme", "dns", "http://example.com", true, "URL schemes are not allowed"},
+		{"dns rejects mixed case scheme", "dns", "HTTPS://example.com", true, "URL schemes are not allowed"},
+		{"dns rejects path", "dns", "example.com/path", true, "must not include a path"},
+		{"dns rejects port", "dns", "example.com:443", true, "must not include a port"},
+		{"ping ok", "ping", "example.com", false, ""},
+		{"ping rejects scheme", "ping", "http://example.com", true, "URL schemes are not allowed"},
+		{"ping rejects port", "ping", "example.com:80", true, "must not include a port"},
+
+		// tcp — host:port required
+		{"tcp ok", "tcp", "example.com:443", false, ""},
+		{"tcp ok low port", "tcp", "example.com:1", false, ""},
+		{"tcp ok high port", "tcp", "example.com:65535", false, ""},
+		{"tcp ok ipv4", "tcp", "10.0.0.1:22", false, ""},
+		{"tcp missing port", "tcp", "example.com", true, "host:port"},
+		{"tcp rejects scheme", "tcp", "https://example.com:443", true, "URL schemes are not allowed"},
+		{"tcp rejects path", "tcp", "example.com:443/x", true, "path"},
+		{"tcp rejects port zero", "tcp", "example.com:0", true, "1 and 65535"},
+		{"tcp rejects port too high", "tcp", "example.com:99999", true, "1 and 65535"},
+		{"tcp rejects non-numeric port", "tcp", "example.com:abc", true, "1 and 65535"},
+		{"tcp rejects empty host", "tcp", ":443", true, "host"},
+
+		// Edge cases
+		{"empty target is valid at this layer", "dns", "", false, ""}, // Required-ness is enforced elsewhere
+		{"unknown type no-op", "", "whatever", false, ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			issues := validateMonitorTargetFormat(tt.monType, tt.target)
+			gotErr := len(issues) > 0
+			if gotErr != tt.wantErr {
+				t.Fatalf("wantErr=%v, got issues=%v", tt.wantErr, issues)
+			}
+			if tt.wantErr && tt.wantContains != "" {
+				found := false
+				for _, msg := range issues {
+					if strings.Contains(msg, tt.wantContains) {
+						found = true
+						break
+					}
+				}
+				if !found {
+					t.Errorf("expected an issue containing %q, got: %v", tt.wantContains, issues)
+				}
+			}
+		})
 	}
 }
