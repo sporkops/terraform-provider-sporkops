@@ -1,4 +1,4 @@
-resource "spork_member_invitation" "ops" {
+resource "spork_member" "ops" {
   email = "ops@example.com"
   role  = "member"
 }
