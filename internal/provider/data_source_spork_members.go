@@ -117,7 +117,7 @@ func (d *MembersDataSource) Read(ctx context.Context, req datasource.ReadRequest
 
 	members, err := d.client.ListMembers(ctx)
 	if err != nil {
-		resp.Diagnostics.AddError("Error listing members", err.Error())
+		addAPIError(&resp.Diagnostics, "Error listing members", err)
 		return
 	}
 

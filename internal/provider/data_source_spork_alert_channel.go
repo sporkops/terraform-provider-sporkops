@@ -106,7 +106,7 @@ func (d *AlertChannelDataSource) Read(ctx context.Context, req datasource.ReadRe
 				resp.Diagnostics.AddError("Alert Channel Not Found", "No alert channel found with ID: "+config.ID.ValueString())
 				return
 			}
-			resp.Diagnostics.AddError("Error reading alert channel", err.Error())
+			addAPIError(&resp.Diagnostics, "Error reading alert channel", err)
 			return
 		}
 		result = r
@@ -114,7 +114,7 @@ func (d *AlertChannelDataSource) Read(ctx context.Context, req datasource.ReadRe
 		// Lookup by name
 		channels, err := d.client.ListAlertChannels(ctx)
 		if err != nil {
-			resp.Diagnostics.AddError("Error listing alert channels", err.Error())
+			addAPIError(&resp.Diagnostics, "Error listing alert channels", err)
 			return
 		}
 		var matches []spork.AlertChannel

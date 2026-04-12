@@ -180,7 +180,7 @@ func (d *StatusPagesDataSource) Configure(_ context.Context, req datasource.Conf
 func (d *StatusPagesDataSource) Read(ctx context.Context, req datasource.ReadRequest, resp *datasource.ReadResponse) {
 	pages, err := d.client.ListStatusPages(ctx)
 	if err != nil {
-		resp.Diagnostics.AddError("Error listing status pages", err.Error())
+		addAPIError(&resp.Diagnostics, "Error listing status pages", err)
 		return
 	}
 

@@ -125,7 +125,7 @@ func (d *OrganizationDataSource) Configure(_ context.Context, req datasource.Con
 func (d *OrganizationDataSource) Read(ctx context.Context, req datasource.ReadRequest, resp *datasource.ReadResponse) {
 	org, err := d.client.GetOrganization(ctx)
 	if err != nil {
-		resp.Diagnostics.AddError("Error reading organization", err.Error())
+		addAPIError(&resp.Diagnostics, "Error reading organization", err)
 		return
 	}
 

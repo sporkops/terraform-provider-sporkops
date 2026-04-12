@@ -327,7 +327,7 @@ func (r *StatusPageResource) Create(ctx context.Context, req resource.CreateRequ
 
 	result, err := r.client.CreateStatusPage(ctx, &apiPage)
 	if err != nil {
-		resp.Diagnostics.AddError("Error creating status page", err.Error())
+		addAPIError(&resp.Diagnostics, "Error creating status page", err)
 		return
 	}
 
@@ -343,13 +343,13 @@ func (r *StatusPageResource) Create(ctx context.Context, req resource.CreateRequ
 	if !plan.CustomDomain.IsNull() && !plan.CustomDomain.IsUnknown() && plan.CustomDomain.ValueString() != "" {
 		err := r.client.SetCustomDomain(ctx, result.ID, plan.CustomDomain.ValueString())
 		if err != nil {
-			resp.Diagnostics.AddError("Error setting custom domain", err.Error())
+			addAPIError(&resp.Diagnostics, "Error setting custom domain", err)
 			return
 		}
 		// Re-read to get domain_status
 		result, err = r.client.GetStatusPage(ctx, result.ID)
 		if err != nil {
-			resp.Diagnostics.AddError("Error reading status page after setting custom domain", err.Error())
+			addAPIError(&resp.Diagnostics, "Error reading status page after setting custom domain", err)
 			return
 		}
 		state = statusPageToModel(ctx, *result)
@@ -370,7 +370,7 @@ func (r *StatusPageResource) Read(ctx context.Context, req resource.ReadRequest,
 			resp.State.RemoveResource(ctx)
 			return
 		}
-		resp.Diagnostics.AddError("Error reading status page", err.Error())
+		addAPIError(&resp.Diagnostics, "Error reading status page", err)
 		return
 	}
 
@@ -397,7 +397,7 @@ func (r *StatusPageResource) Update(ctx context.Context, req resource.UpdateRequ
 
 	result, err := r.client.UpdateStatusPage(ctx, state.ID.ValueString(), &apiPage)
 	if err != nil {
-		resp.Diagnostics.AddError("Error updating status page", err.Error())
+		addAPIError(&resp.Diagnostics, "Error updating status page", err)
 		return
 	}
 
@@ -413,21 +413,21 @@ func (r *StatusPageResource) Update(ctx context.Context, req resource.UpdateRequ
 			// Remove custom domain
 			err := r.client.RemoveCustomDomain(ctx, result.ID)
 			if err != nil {
-				resp.Diagnostics.AddError("Error removing custom domain", err.Error())
+				addAPIError(&resp.Diagnostics, "Error removing custom domain", err)
 				return
 			}
 		} else if newDomain != "" {
 			// Set (or change) custom domain
 			err := r.client.SetCustomDomain(ctx, result.ID, newDomain)
 			if err != nil {
-				resp.Diagnostics.AddError("Error setting custom domain", err.Error())
+				addAPIError(&resp.Diagnostics, "Error setting custom domain", err)
 				return
 			}
 		}
 		// Re-read to get updated domain state
 		result, err = r.client.GetStatusPage(ctx, result.ID)
 		if err != nil {
-			resp.Diagnostics.AddError("Error reading status page after domain change", err.Error())
+			addAPIError(&resp.Diagnostics, "Error reading status page after domain change", err)
 			return
 		}
 	}
@@ -446,7 +446,7 @@ func (r *StatusPageResource) Delete(ctx context.Context, req resource.DeleteRequ
 
 	err := r.client.DeleteStatusPage(ctx, state.ID.ValueString())
 	if err != nil && !spork.IsNotFound(err) {
-		resp.Diagnostics.AddError("Error deleting status page", err.Error())
+		addAPIError(&resp.Diagnostics, "Error deleting status page", err)
 	}
 }
 
