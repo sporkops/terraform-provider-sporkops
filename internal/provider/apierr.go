@@ -10,9 +10,9 @@ import (
 )
 
 // addAPIError appends a diagnostic that preserves the structured information
-// carried by a *spork.APIError (HTTP status, API error code, and the
-// X-Request-Id returned by the server). For non-API errors the original error
-// string is surfaced unchanged.
+// carried by a *spork.APIError (HTTP status, API error code, field-level
+// validation details, and the X-Request-Id returned by the server). For
+// non-API errors the original error string is surfaced unchanged.
 //
 // The caller-supplied summary is the short title Terraform shows at the top
 // of the diagnostic (e.g. "Error creating monitor"); it is left alone so
@@ -20,9 +20,6 @@ import (
 // the summary is additionally annotated with the HTTP status code so
 // operators can distinguish 4xx user errors from 5xx server errors at a
 // glance.
-//
-// Field-level validation details (spork.APIError.Details) will be surfaced
-// here once spork-go publishes them; see P0-2 / P0-4 in the audit plan.
 func addAPIError(diags *diag.Diagnostics, summary string, err error) {
 	if err == nil {
 		return
@@ -45,6 +42,16 @@ func addAPIError(diags *diag.Diagnostics, summary string, err error) {
 	}
 	if apiErr.Code != "" && apiErr.Code != "unknown" {
 		fmt.Fprintf(&b, "\n\nError code: %s", apiErr.Code)
+	}
+	if len(apiErr.Details) > 0 {
+		b.WriteString("\n\nField errors:")
+		for _, d := range apiErr.Details {
+			if d.Field != "" {
+				fmt.Fprintf(&b, "\n  - %s: %s", d.Field, d.Message)
+			} else {
+				fmt.Fprintf(&b, "\n  - %s", d.Message)
+			}
+		}
 	}
 	if apiErr.RequestID != "" {
 		fmt.Fprintf(&b, "\n\nRequest ID: %s (include this when contacting support)", apiErr.RequestID)

@@ -67,6 +67,37 @@ func TestAddAPIError_NilIsNoOp(t *testing.T) {
 	}
 }
 
+func TestAddAPIError_SurfacesFieldDetails(t *testing.T) {
+	var diags diag.Diagnostics
+	apiErr := &spork.APIError{
+		StatusCode: 422,
+		Code:       "validation_error",
+		Message:    "invalid monitor",
+		Details: []spork.ErrorDetail{
+			{Field: "target", Message: "must be a valid URL"},
+			{Field: "interval", Message: "must be >= 60"},
+			{Message: "one or more fields failed validation"},
+		},
+		RequestID: "req_xyz",
+	}
+	addAPIError(&diags, "Error creating monitor", apiErr)
+
+	d := diags.Errors()[0]
+	detail := d.Detail()
+	if !strings.Contains(detail, "Field errors:") {
+		t.Errorf("expected Field errors: block, got %q", detail)
+	}
+	if !strings.Contains(detail, "target: must be a valid URL") {
+		t.Errorf("expected target detail, got %q", detail)
+	}
+	if !strings.Contains(detail, "interval: must be >= 60") {
+		t.Errorf("expected interval detail, got %q", detail)
+	}
+	if !strings.Contains(detail, "one or more fields failed validation") {
+		t.Errorf("expected fieldless detail to appear, got %q", detail)
+	}
+}
+
 func TestAddAPIError_SkipsUnknownCodeAndEmptyRequestID(t *testing.T) {
 	var diags diag.Diagnostics
 	apiErr := &spork.APIError{

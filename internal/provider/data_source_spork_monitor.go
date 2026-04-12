@@ -29,9 +29,9 @@ type MonitorDataSourceModel struct {
 	ExpectedStatus   types.Int64  `tfsdk:"expected_status"`
 	Paused           types.Bool   `tfsdk:"paused"`
 	Status           types.String `tfsdk:"status"`
-	Regions          types.List   `tfsdk:"regions"`
-	AlertChannelIDs  types.List   `tfsdk:"alert_channel_ids"`
-	Tags             types.List   `tfsdk:"tags"`
+	Regions          types.Set    `tfsdk:"regions"`
+	AlertChannelIDs  types.Set    `tfsdk:"alert_channel_ids"`
+	Tags             types.Set    `tfsdk:"tags"`
 	Headers          types.Map    `tfsdk:"headers"`
 	Body             types.String `tfsdk:"body"`
 	Keyword          types.String `tfsdk:"keyword"`
@@ -99,18 +99,18 @@ func (d *MonitorDataSource) Schema(_ context.Context, _ datasource.SchemaRequest
 				Description:         "Current monitor status: up, down, degraded, paused, or pending.",
 				MarkdownDescription: "Current monitor status: `up`, `down`, `degraded`, `paused`, or `pending`.",
 			},
-			"regions": schema.ListAttribute{
+			"regions": schema.SetAttribute{
 				Computed:            true,
 				ElementType:         types.StringType,
 				Description:         "Regions the monitor checks from.",
 				MarkdownDescription: "Regions the monitor checks from. Available: `us-central1`, `europe-west1`.",
 			},
-			"alert_channel_ids": schema.ListAttribute{
+			"alert_channel_ids": schema.SetAttribute{
 				Computed:    true,
 				ElementType: types.StringType,
 				Description: "IDs of alert channels notified on status changes.",
 			},
-			"tags": schema.ListAttribute{
+			"tags": schema.SetAttribute{
 				Computed:    true,
 				ElementType: types.StringType,
 				Description: "Tags for organizing monitors.",
@@ -221,22 +221,22 @@ func (d *MonitorDataSource) Read(ctx context.Context, req datasource.ReadRequest
 	}
 
 	var convDiags diag.Diagnostics
-	regions, convDiags := types.ListValueFrom(ctx, types.StringType, result.Regions)
+	regions, convDiags := types.SetValueFrom(ctx, types.StringType, result.Regions)
 	resp.Diagnostics.Append(convDiags...)
 	if result.Regions == nil {
-		regions, convDiags = types.ListValueFrom(ctx, types.StringType, []string{})
+		regions, convDiags = types.SetValueFrom(ctx, types.StringType, []string{})
 		resp.Diagnostics.Append(convDiags...)
 	}
 
-	alertChannelIDs := types.ListNull(types.StringType)
-	if result.AlertChannelIDs != nil {
-		alertChannelIDs, convDiags = types.ListValueFrom(ctx, types.StringType, result.AlertChannelIDs)
+	alertChannelIDs := types.SetNull(types.StringType)
+	if len(result.AlertChannelIDs) > 0 {
+		alertChannelIDs, convDiags = types.SetValueFrom(ctx, types.StringType, result.AlertChannelIDs)
 		resp.Diagnostics.Append(convDiags...)
 	}
 
-	tags := types.ListNull(types.StringType)
-	if result.Tags != nil {
-		tags, convDiags = types.ListValueFrom(ctx, types.StringType, result.Tags)
+	tags := types.SetNull(types.StringType)
+	if len(result.Tags) > 0 {
+		tags, convDiags = types.SetValueFrom(ctx, types.StringType, result.Tags)
 		resp.Diagnostics.Append(convDiags...)
 	}
 

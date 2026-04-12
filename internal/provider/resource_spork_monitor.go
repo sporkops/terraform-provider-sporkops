@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/hashicorp/terraform-plugin-framework-validators/int64validator"
-	"github.com/hashicorp/terraform-plugin-framework-validators/listvalidator"
+	"github.com/hashicorp/terraform-plugin-framework-validators/setvalidator"
 	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
@@ -45,9 +45,9 @@ type MonitorResourceModel struct {
 	ExpectedStatus  types.Int64  `tfsdk:"expected_status"`
 	Interval        types.Int64  `tfsdk:"interval"`
 	Timeout         types.Int64  `tfsdk:"timeout"`
-	Regions         types.List   `tfsdk:"regions"`
-	AlertChannelIDs types.List   `tfsdk:"alert_channel_ids"`
-	Tags            types.List   `tfsdk:"tags"`
+	Regions         types.Set    `tfsdk:"regions"`
+	AlertChannelIDs types.Set    `tfsdk:"alert_channel_ids"`
+	Tags            types.Set    `tfsdk:"tags"`
 	Paused          types.Bool   `tfsdk:"paused"`
 	Status          types.String `tfsdk:"status"`
 	Headers         types.Map    `tfsdk:"headers"`
@@ -142,29 +142,29 @@ func (r *MonitorResource) Schema(_ context.Context, _ resource.SchemaRequest, re
 					int64validator.Between(5, 120),
 				},
 			},
-			"regions": schema.ListAttribute{
+			"regions": schema.SetAttribute{
 				Optional:            true,
 				Computed:            true,
 				ElementType:         types.StringType,
-				Description:         "Regions to check from. Default: [\"us-central1\"].",
-				MarkdownDescription: "Regions to check from. Available: `us-central1`, `europe-west1`. Default: `[\"us-central1\"]`.",
-				Validators: []validator.List{
-					listvalidator.ValueStringsAre(
+				Description:         "Regions to check from. Default: [\"us-central1\"]. Order is not significant.",
+				MarkdownDescription: "Regions to check from. Available: `us-central1`, `europe-west1`. Default: `[\"us-central1\"]`. Order is not significant.",
+				Validators: []validator.Set{
+					setvalidator.ValueStringsAre(
 						stringvalidator.OneOf("us-central1", "europe-west1"),
 					),
 				},
 			},
-			"alert_channel_ids": schema.ListAttribute{
+			"alert_channel_ids": schema.SetAttribute{
 				Optional:    true,
 				Computed:    true,
 				ElementType: types.StringType,
-				Description: "IDs of alert channels to notify on status changes.",
+				Description: "IDs of alert channels to notify on status changes. Order is not significant.",
 			},
-			"tags": schema.ListAttribute{
+			"tags": schema.SetAttribute{
 				Optional:    true,
 				Computed:    true,
 				ElementType: types.StringType,
-				Description: "Tags for organizing monitors.",
+				Description: "Tags for organizing monitors. Order is not significant.",
 			},
 			"paused": schema.BoolAttribute{
 				Optional:            true,
@@ -482,22 +482,26 @@ func monitorFromModel(ctx context.Context, model MonitorResourceModel, diags *di
 
 func monitorToModel(ctx context.Context, m spork.Monitor, diags *diag.Diagnostics) MonitorResourceModel {
 	var d diag.Diagnostics
-	regions, d := types.ListValueFrom(ctx, types.StringType, m.Regions)
+	regions, d := types.SetValueFrom(ctx, types.StringType, m.Regions)
 	diags.Append(d...)
 	if m.Regions == nil {
-		regions, d = types.ListValueFrom(ctx, types.StringType, []string{"us-central1"})
+		regions, d = types.SetValueFrom(ctx, types.StringType, []string{"us-central1"})
 		diags.Append(d...)
 	}
 
-	alertChannelIDs := types.ListNull(types.StringType)
-	if m.AlertChannelIDs != nil {
-		alertChannelIDs, d = types.ListValueFrom(ctx, types.StringType, m.AlertChannelIDs)
+	// Normalize empty slices to null so plans don't flap between
+	// `alert_channel_ids = []` (from the API) and the user's
+	// `alert_channel_ids = null` (the zero value for an Optional+Computed
+	// attribute).
+	alertChannelIDs := types.SetNull(types.StringType)
+	if len(m.AlertChannelIDs) > 0 {
+		alertChannelIDs, d = types.SetValueFrom(ctx, types.StringType, m.AlertChannelIDs)
 		diags.Append(d...)
 	}
 
-	tags := types.ListNull(types.StringType)
-	if m.Tags != nil {
-		tags, d = types.ListValueFrom(ctx, types.StringType, m.Tags)
+	tags := types.SetNull(types.StringType)
+	if len(m.Tags) > 0 {
+		tags, d = types.SetValueFrom(ctx, types.StringType, m.Tags)
 		diags.Append(d...)
 	}
 
