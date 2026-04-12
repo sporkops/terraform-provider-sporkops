@@ -43,9 +43,38 @@ resource "spork_monitor" "api" {
 }
 ```
 
+### DNS, TCP, and Ping Monitors
+
+Network-level monitors use a different target format — a bare hostname for DNS
+and ping, `host:port` for TCP. URL schemes (`http://`, `https://`) and paths
+are rejected at `terraform plan` time.
+
+```hcl
+resource "spork_monitor" "dns_check" {
+  name   = "DNS Resolution"
+  target = "example.com"
+  type   = "dns"
+}
+
+resource "spork_monitor" "tcp_check" {
+  name   = "TCP Connectivity"
+  target = "example.com:443"
+  type   = "tcp"
+}
+
+resource "spork_monitor" "ping_check" {
+  name   = "ICMP Ping"
+  target = "example.com"
+  type   = "ping"
+}
+```
+
 ## Argument Reference
 
-- `target` (Required, String) — The URL to monitor. Must start with `http://` or `https://`.
+- `target` (Required, String) — The target to monitor. Format depends on `type`:
+  - `http`, `keyword`, `ssl`: URL starting with `http://` or `https://` (e.g., `https://example.com`).
+  - `dns`, `ping`: bare hostname or IP (e.g., `example.com`). No URL scheme, path, or port.
+  - `tcp`: `host:port` (e.g., `example.com:443`).
 - `name` (Required, String) — A human-readable name for the monitor (1-100 characters).
 - `type` (Optional, String) — Monitor type. One of: `http`, `ssl`, `dns`, `keyword`, `tcp`, `ping`. Default: `http`.
 - `method` (Optional, String) — HTTP method to use for checks. One of: `GET`, `HEAD`, `POST`, `PUT`. Default: `GET`.
@@ -64,9 +93,12 @@ resource "spork_monitor" "api" {
 
 ## Type-Specific Requirements
 
-- **keyword monitors** (`type = "keyword"`): `keyword` is required. `keyword_type` defaults to `"exists"` and accepts `"exists"` or `"not_exists"`.
-- **ssl monitors** (`type = "ssl"`): `ssl_warn_days` is optional and defaults to `30`.
-- **HTTP monitors** (`type = "http"`): `headers` and `body` are optional and can be used with any HTTP monitor type.
+- **HTTP monitors** (`type = "http"`): `target` must start with `http://` or `https://`. `headers` and `body` are optional.
+- **keyword monitors** (`type = "keyword"`): `target` must start with `http://` or `https://`. `keyword` is required. `keyword_type` defaults to `"exists"` and accepts `"exists"` or `"not_exists"`.
+- **SSL monitors** (`type = "ssl"`): `target` must start with `http://` or `https://`. `ssl_warn_days` is optional and defaults to `14`.
+- **DNS monitors** (`type = "dns"`): `target` must be a bare hostname or IP (e.g. `example.com`). URL schemes, paths, and embedded ports are rejected.
+- **TCP monitors** (`type = "tcp"`): `target` must be `host:port` (e.g. `example.com:443`). URL schemes and paths are rejected; the port must be an integer from 1 to 65535.
+- **Ping monitors** (`type = "ping"`): `target` must be a bare hostname or IP (e.g. `example.com`). URL schemes, paths, and embedded ports are rejected.
 
 ## Attribute Reference
 
