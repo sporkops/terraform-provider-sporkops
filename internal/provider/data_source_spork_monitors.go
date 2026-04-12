@@ -94,18 +94,18 @@ func (d *MonitorsDataSource) Schema(_ context.Context, _ datasource.SchemaReques
 							Description:         "Current monitor status: up, down, degraded, paused, or pending.",
 							MarkdownDescription: "Current monitor status: `up`, `down`, `degraded`, `paused`, or `pending`.",
 						},
-						"regions": schema.ListAttribute{
+						"regions": schema.SetAttribute{
 							Computed:            true,
 							ElementType:         types.StringType,
 							Description:         "Regions the monitor checks from.",
 							MarkdownDescription: "Regions the monitor checks from. Available: `us-central1`, `europe-west1`.",
 						},
-						"alert_channel_ids": schema.ListAttribute{
+						"alert_channel_ids": schema.SetAttribute{
 							Computed:    true,
 							ElementType: types.StringType,
 							Description: "IDs of alert channels notified on status changes.",
 						},
-						"tags": schema.ListAttribute{
+						"tags": schema.SetAttribute{
 							Computed:    true,
 							ElementType: types.StringType,
 							Description: "Tags for organizing monitors.",
@@ -197,22 +197,22 @@ func (d *MonitorsDataSource) Read(ctx context.Context, req datasource.ReadReques
 		}
 
 		var convDiags diag.Diagnostics
-		regions, convDiags := types.ListValueFrom(ctx, types.StringType, m.Regions)
+		regions, convDiags := types.SetValueFrom(ctx, types.StringType, m.Regions)
 		resp.Diagnostics.Append(convDiags...)
 		if m.Regions == nil {
-			regions, convDiags = types.ListValueFrom(ctx, types.StringType, []string{})
+			regions, convDiags = types.SetValueFrom(ctx, types.StringType, []string{})
 			resp.Diagnostics.Append(convDiags...)
 		}
 
-		alertChannelIDs := types.ListNull(types.StringType)
-		if m.AlertChannelIDs != nil {
-			alertChannelIDs, convDiags = types.ListValueFrom(ctx, types.StringType, m.AlertChannelIDs)
+		alertChannelIDs := types.SetNull(types.StringType)
+		if len(m.AlertChannelIDs) > 0 {
+			alertChannelIDs, convDiags = types.SetValueFrom(ctx, types.StringType, m.AlertChannelIDs)
 			resp.Diagnostics.Append(convDiags...)
 		}
 
-		tags := types.ListNull(types.StringType)
-		if m.Tags != nil {
-			tags, convDiags = types.ListValueFrom(ctx, types.StringType, m.Tags)
+		tags := types.SetNull(types.StringType)
+		if len(m.Tags) > 0 {
+			tags, convDiags = types.SetValueFrom(ctx, types.StringType, m.Tags)
 			resp.Diagnostics.Append(convDiags...)
 		}
 

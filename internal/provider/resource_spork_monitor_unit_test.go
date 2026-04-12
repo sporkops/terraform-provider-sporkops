@@ -29,9 +29,9 @@ func TestMonitorFromModel_dns(t *testing.T) {
 		Keyword:        types.StringNull(),
 		KeywordType:    types.StringNull(),
 		SSLWarnDays:    types.Int64Null(),
-		Regions:        types.ListNull(types.StringType),
-		AlertChannelIDs: types.ListNull(types.StringType),
-		Tags:           types.ListNull(types.StringType),
+		Regions:        types.SetNull(types.StringType),
+		AlertChannelIDs: types.SetNull(types.StringType),
+		Tags:           types.SetNull(types.StringType),
 		Headers:        types.MapNull(types.StringType),
 	}
 
@@ -90,9 +90,9 @@ func TestMonitorFromModel_http(t *testing.T) {
 		Keyword:        types.StringNull(),
 		KeywordType:    types.StringNull(),
 		SSLWarnDays:    types.Int64Null(),
-		Regions:        types.ListNull(types.StringType),
-		AlertChannelIDs: types.ListNull(types.StringType),
-		Tags:           types.ListNull(types.StringType),
+		Regions:        types.SetNull(types.StringType),
+		AlertChannelIDs: types.SetNull(types.StringType),
+		Tags:           types.SetNull(types.StringType),
 		Headers:        types.MapNull(types.StringType),
 	}
 
@@ -129,9 +129,9 @@ func TestMonitorFromModel_ssl(t *testing.T) {
 		Body:           types.StringNull(),
 		Keyword:        types.StringNull(),
 		KeywordType:    types.StringNull(),
-		Regions:        types.ListNull(types.StringType),
-		AlertChannelIDs: types.ListNull(types.StringType),
-		Tags:           types.ListNull(types.StringType),
+		Regions:        types.SetNull(types.StringType),
+		AlertChannelIDs: types.SetNull(types.StringType),
+		Tags:           types.SetNull(types.StringType),
 		Headers:        types.MapNull(types.StringType),
 	}
 
@@ -168,9 +168,9 @@ func TestMonitorFromModel_keyword(t *testing.T) {
 		KeywordType:    types.StringValue("exists"),
 		SSLWarnDays:    types.Int64Null(),
 		Body:           types.StringNull(),
-		Regions:        types.ListNull(types.StringType),
-		AlertChannelIDs: types.ListNull(types.StringType),
-		Tags:           types.ListNull(types.StringType),
+		Regions:        types.SetNull(types.StringType),
+		AlertChannelIDs: types.SetNull(types.StringType),
+		Tags:           types.SetNull(types.StringType),
 		Headers:        types.MapNull(types.StringType),
 	}
 
@@ -210,9 +210,9 @@ func TestMonitorFromModel_tcp(t *testing.T) {
 		Keyword:        types.StringNull(),
 		KeywordType:    types.StringNull(),
 		SSLWarnDays:    types.Int64Null(),
-		Regions:        types.ListNull(types.StringType),
-		AlertChannelIDs: types.ListNull(types.StringType),
-		Tags:           types.ListNull(types.StringType),
+		Regions:        types.SetNull(types.StringType),
+		AlertChannelIDs: types.SetNull(types.StringType),
+		Tags:           types.SetNull(types.StringType),
 		Headers:        types.MapNull(types.StringType),
 	}
 
@@ -246,9 +246,9 @@ func TestMonitorFromModel_ping(t *testing.T) {
 		Keyword:        types.StringNull(),
 		KeywordType:    types.StringNull(),
 		SSLWarnDays:    types.Int64Null(),
-		Regions:        types.ListNull(types.StringType),
-		AlertChannelIDs: types.ListNull(types.StringType),
-		Tags:           types.ListNull(types.StringType),
+		Regions:        types.SetNull(types.StringType),
+		AlertChannelIDs: types.SetNull(types.StringType),
+		Tags:           types.SetNull(types.StringType),
 		Headers:        types.MapNull(types.StringType),
 	}
 

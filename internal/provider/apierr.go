@@ -11,8 +11,8 @@ import (
 
 // addAPIError appends a diagnostic that preserves the structured information
 // carried by a *spork.APIError (HTTP status, API error code, and the
-// X-Request-Id returned by the server). For non-API errors the original error
-// string is surfaced unchanged.
+// X-Request-Id returned by the server). For non-API errors the original
+// error string is surfaced unchanged.
 //
 // The caller-supplied summary is the short title Terraform shows at the top
 // of the diagnostic (e.g. "Error creating monitor"); it is left alone so
@@ -21,8 +21,9 @@ import (
 // operators can distinguish 4xx user errors from 5xx server errors at a
 // glance.
 //
-// Field-level validation details (spork.APIError.Details) will be surfaced
-// here once spork-go publishes them; see P0-2 / P0-4 in the audit plan.
+// Field-level validation details (spork.APIError.Details) are surfaced in a
+// follow-up once spork-go v0.4.0 is released and this provider's go.mod
+// bumped; see P0-4 in the audit plan.
 func addAPIError(diags *diag.Diagnostics, summary string, err error) {
 	if err == nil {
 		return
