@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/hashicorp/terraform-plugin-framework-validators/int64validator"
-	"github.com/hashicorp/terraform-plugin-framework-validators/setvalidator"
 	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
@@ -147,12 +146,7 @@ func (r *MonitorResource) Schema(_ context.Context, _ resource.SchemaRequest, re
 				Computed:            true,
 				ElementType:         types.StringType,
 				Description:         "Regions to check from. Default: [\"us-central1\"]. Order is not significant.",
-				MarkdownDescription: "Regions to check from. Available: `us-central1`, `europe-west1`. Default: `[\"us-central1\"]`. Order is not significant.",
-				Validators: []validator.Set{
-					setvalidator.ValueStringsAre(
-						stringvalidator.OneOf("us-central1", "europe-west1"),
-					),
-				},
+				MarkdownDescription: "Regions to check from. Use `GET /regions` to list available regions. Default: `[\"us-central1\"]`. Order is not significant.",
 			},
 			"alert_channel_ids": schema.SetAttribute{
 				Optional:    true,
