@@ -127,5 +127,7 @@ func (p *SporkProvider) DataSources(_ context.Context) []func() datasource.DataS
 		NewStatusPagesDataSource,
 		NewMembersDataSource,
 		NewOrganizationDataSource,
+		NewMaintenanceWindowDataSource,
+		NewMaintenanceWindowsDataSource,
 	}
 }
