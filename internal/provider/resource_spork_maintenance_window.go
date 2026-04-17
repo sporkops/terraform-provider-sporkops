@@ -11,7 +11,9 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/boolplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/listplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/setplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -22,6 +24,7 @@ var (
 	_ resource.Resource                   = &MaintenanceWindowResource{}
 	_ resource.ResourceWithConfigure      = &MaintenanceWindowResource{}
 	_ resource.ResourceWithImportState    = &MaintenanceWindowResource{}
+	_ resource.ResourceWithModifyPlan     = &MaintenanceWindowResource{}
 	_ resource.ResourceWithValidateConfig = &MaintenanceWindowResource{}
 )
 
@@ -97,7 +100,7 @@ func (r *MaintenanceWindowResource) Schema(_ context.Context, _ resource.SchemaR
 				ElementType: types.StringType,
 				Description: "Monitor IDs the window applies to. Mutually exclusive with tag_selectors and all_monitors.",
 				PlanModifiers: []planmodifier.Set{
-					setplanmodifierUseStateForUnknown(),
+					setplanmodifier.UseStateForUnknown(),
 				},
 			},
 			"tag_selectors": schema.SetAttribute{
@@ -106,7 +109,7 @@ func (r *MaintenanceWindowResource) Schema(_ context.Context, _ resource.SchemaR
 				ElementType: types.StringType,
 				Description: "Monitor tags to match (OR semantics). Mutually exclusive with monitor_ids and all_monitors.",
 				PlanModifiers: []planmodifier.Set{
-					setplanmodifierUseStateForUnknown(),
+					setplanmodifier.UseStateForUnknown(),
 				},
 			},
 			"all_monitors": schema.BoolAttribute{
@@ -149,7 +152,7 @@ func (r *MaintenanceWindowResource) Schema(_ context.Context, _ resource.SchemaR
 				Description:         "For weekly: days 0-6 (Sun=0). For monthly: days 1-31 (days > last-of-month clamp to the last day).",
 				MarkdownDescription: "For `weekly`: days 0-6 (Sun=0). For `monthly`: days 1-31 (days > last-of-month clamp to the last day).",
 				PlanModifiers: []planmodifier.List{
-					listplanmodifierUseStateForUnknown(),
+					listplanmodifier.UseStateForUnknown(),
 				},
 			},
 			"recurrence_until": schema.StringAttribute{
@@ -535,8 +538,7 @@ func maintenanceWindowToModel(ctx context.Context, w spork.MaintenanceWindow, fa
 		model.TagSelectors = types.SetNull(types.StringType)
 	}
 
-	// RecurrenceDays — same fallback pattern (already present before, but
-	// rewritten for consistency with the other two).
+	// RecurrenceDays — same fallback pattern.
 	if len(w.RecurrenceDays) > 0 {
 		days := make([]int64, len(w.RecurrenceDays))
 		for i, d := range w.RecurrenceDays {
