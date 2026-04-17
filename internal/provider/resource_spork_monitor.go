@@ -176,8 +176,9 @@ func (r *MonitorResource) Schema(_ context.Context, _ resource.SchemaRequest, re
 			},
 			"headers": schema.MapAttribute{
 				Optional:    true,
+				Sensitive:   true,
 				ElementType: types.StringType,
-				Description: "HTTP headers to send with each check.",
+				Description: "HTTP headers to send with each check. Marked sensitive because Authorization and other auth headers are commonly placed here.",
 			},
 			"body": schema.StringAttribute{
 				Optional:    true,

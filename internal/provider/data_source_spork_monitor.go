@@ -117,8 +117,9 @@ func (d *MonitorDataSource) Schema(_ context.Context, _ datasource.SchemaRequest
 			},
 			"headers": schema.MapAttribute{
 				Computed:    true,
+				Sensitive:   true,
 				ElementType: types.StringType,
-				Description: "Custom HTTP request headers sent with each check.",
+				Description: "Custom HTTP request headers sent with each check. Marked sensitive because Authorization and other auth headers are commonly placed here.",
 			},
 			"body": schema.StringAttribute{
 				Computed:    true,

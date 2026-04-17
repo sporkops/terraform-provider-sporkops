@@ -2,6 +2,9 @@ package provider
 
 import (
 	"context"
+	"fmt"
+	"net"
+	"net/url"
 	"os"
 	"strings"
 
@@ -12,6 +15,8 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/sporkops/spork-go"
 )
+
+const defaultAPIBaseURL = "https://api.sporkops.com/v1"
 
 var _ provider.Provider = &SporkProvider{}
 
@@ -86,15 +91,12 @@ func (p *SporkProvider) Configure(ctx context.Context, req provider.ConfigureReq
 
 	baseURL := os.Getenv("SPORK_API_URL")
 	if baseURL == "" {
-		baseURL = "https://api.sporkops.com/v1"
+		baseURL = defaultAPIBaseURL
 	}
 
-	if !strings.HasPrefix(baseURL, "https://") {
-		resp.Diagnostics.AddWarning(
-			"Insecure API URL",
-			"SPORK_API_URL does not use HTTPS. Your API key will be sent in cleartext. "+
-				"This is acceptable for local development but should not be used in production.",
-		)
+	if err := validateAPIBaseURL(baseURL); err != nil {
+		resp.Diagnostics.AddError("Invalid SPORK_API_URL", err.Error())
+		return
 	}
 
 	client := spork.NewClient(
@@ -127,4 +129,41 @@ func (p *SporkProvider) DataSources(_ context.Context) []func() datasource.DataS
 		NewMembersDataSource,
 		NewOrganizationDataSource,
 	}
+}
+
+// validateAPIBaseURL rejects SPORK_API_URL values that would leak the API key
+// to a plaintext or internal-network endpoint. The default production URL is
+// always allowed; any override must parse cleanly, use https, and resolve to a
+// non-loopback, non-private, non-link-local host.
+func validateAPIBaseURL(raw string) error {
+	if raw == defaultAPIBaseURL {
+		return nil
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return fmt.Errorf("SPORK_API_URL is not a valid URL: %w", err)
+	}
+	if !strings.EqualFold(u.Scheme, "https") {
+		return fmt.Errorf("SPORK_API_URL must use https (got %q); the API key is sent with every request and must not transit plaintext", u.Scheme)
+	}
+	host := u.Hostname()
+	if host == "" {
+		return fmt.Errorf("SPORK_API_URL must include a hostname")
+	}
+	// Block literal IPs in loopback, private, link-local, or unspecified
+	// ranges. Hostnames that resolve dynamically are trusted (the server's
+	// TLS cert remains the authentication anchor); guarding those here would
+	// race DNS and give a false sense of security.
+	if ip := net.ParseIP(host); ip != nil {
+		if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsUnspecified() || ip.IsMulticast() {
+			return fmt.Errorf("SPORK_API_URL host %q is in a loopback or private range; API keys must not be sent to internal endpoints", host)
+		}
+	}
+	// Catch well-known hostnames that map to loopback or cloud metadata.
+	lower := strings.ToLower(host)
+	switch lower {
+	case "localhost", "ip6-localhost", "ip6-loopback", "metadata", "metadata.google.internal":
+		return fmt.Errorf("SPORK_API_URL host %q is not permitted; API keys must not be sent to internal endpoints", host)
+	}
+	return nil
 }
