@@ -30,8 +30,9 @@ var (
 // Cancel behavior: the `cancelled` attribute is a writeable bool. Flipping
 // it from false to true calls CancelMaintenanceWindow server-side and
 // moves the window to the "cancelled" state (checks/alerts immediately
-// resume for the targeted monitors). Matches the pattern used by
-// `spork_monitor.paused`.
+// resume for the targeted monitors). The transition is one-way — once
+// cancelled, a window stays cancelled; to reinstate, destroy and recreate.
+// Matches the pattern used by `spork_monitor.paused`.
 type MaintenanceWindowResource struct {
 	client *spork.Client
 }
@@ -92,13 +93,21 @@ func (r *MaintenanceWindowResource) Schema(_ context.Context, _ resource.SchemaR
 			},
 			"monitor_ids": schema.SetAttribute{
 				Optional:    true,
+				Computed:    true,
 				ElementType: types.StringType,
 				Description: "Monitor IDs the window applies to. Mutually exclusive with tag_selectors and all_monitors.",
+				PlanModifiers: []planmodifier.Set{
+					setplanmodifierUseStateForUnknown(),
+				},
 			},
 			"tag_selectors": schema.SetAttribute{
 				Optional:    true,
+				Computed:    true,
 				ElementType: types.StringType,
 				Description: "Monitor tags to match (OR semantics). Mutually exclusive with monitor_ids and all_monitors.",
+				PlanModifiers: []planmodifier.Set{
+					setplanmodifierUseStateForUnknown(),
+				},
 			},
 			"all_monitors": schema.BoolAttribute{
 				Optional:    true,
@@ -135,9 +144,13 @@ func (r *MaintenanceWindowResource) Schema(_ context.Context, _ resource.SchemaR
 			},
 			"recurrence_days": schema.ListAttribute{
 				Optional:            true,
+				Computed:            true,
 				ElementType:         types.Int64Type,
-				Description:         "For weekly: days 0-6 (Sun=0). For monthly: days 1-31.",
-				MarkdownDescription: "For `weekly`: days 0-6 (Sun=0). For `monthly`: days 1-31.",
+				Description:         "For weekly: days 0-6 (Sun=0). For monthly: days 1-31 (days > last-of-month clamp to the last day).",
+				MarkdownDescription: "For `weekly`: days 0-6 (Sun=0). For `monthly`: days 1-31 (days > last-of-month clamp to the last day).",
+				PlanModifiers: []planmodifier.List{
+					listplanmodifierUseStateForUnknown(),
+				},
 			},
 			"recurrence_until": schema.StringAttribute{
 				Optional:    true,
@@ -174,8 +187,8 @@ func (r *MaintenanceWindowResource) Schema(_ context.Context, _ resource.SchemaR
 			"cancelled": schema.BoolAttribute{
 				Optional:            true,
 				Computed:            true,
-				Description:         "Cancel the window. Flip from false to true to cancel. Matches the spork_monitor.paused pattern.",
-				MarkdownDescription: "Cancel the window. Flip from `false` to `true` to cancel. Matches the `spork_monitor.paused` pattern.",
+				Description:         "Cancel the window. Flip from false to true to cancel. One-way transition — destroy and recreate to reinstate.",
+				MarkdownDescription: "Cancel the window. Flip from `false` to `true` to cancel. **One-way transition** — destroy and recreate to reinstate.",
 				PlanModifiers: []planmodifier.Bool{
 					boolplanmodifier.UseStateForUnknown(),
 				},
@@ -325,6 +338,35 @@ func (r *MaintenanceWindowResource) Delete(ctx context.Context, req resource.Del
 	}
 }
 
+// ModifyPlan blocks the cancelled = true → false transition. Cancellation
+// is one-way at the server, so Terraform cannot realistically un-cancel —
+// without this guard the plan would show a perpetual diff because Read
+// always reports `cancelled = true` for cancelled windows.
+//
+// The guard lives in ModifyPlan (not ValidateConfig) because we need
+// access to prior state to compare.
+func (r *MaintenanceWindowResource) ModifyPlan(ctx context.Context, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse) {
+	// Nothing to check on create (no prior state) or destroy (no plan).
+	if req.State.Raw.IsNull() || req.Plan.Raw.IsNull() {
+		return
+	}
+	var state, plan MaintenanceWindowResourceModel
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	stateCancelled := !state.Cancelled.IsNull() && state.Cancelled.ValueBool()
+	planCancelled := !plan.Cancelled.IsNull() && !plan.Cancelled.IsUnknown() && plan.Cancelled.ValueBool()
+	if stateCancelled && !planCancelled {
+		resp.Diagnostics.AddAttributeError(
+			path.Root("cancelled"),
+			"Cannot un-cancel a maintenance window",
+			"Cancellation is a one-way transition. To reinstate a cancelled window, destroy this resource and create a new one (e.g. `terraform taint spork_maintenance_window.example`).",
+		)
+	}
+}
+
 func (r *MaintenanceWindowResource) ValidateConfig(ctx context.Context, req resource.ValidateConfigRequest, resp *resource.ValidateConfigResponse) {
 	var config MaintenanceWindowResourceModel
 	resp.Diagnostics.Append(req.Config.Get(ctx, &config)...)
@@ -450,8 +492,10 @@ func maintenanceWindowFromModel(ctx context.Context, model MaintenanceWindowReso
 	return mw
 }
 
-// maintenanceWindowToModel deserializes an API MaintenanceWindow into a Terraform model.
-// fallback preserves user-supplied values for fields the API may omit.
+// maintenanceWindowToModel deserializes an API MaintenanceWindow into a
+// Terraform model. `fallback` preserves user-supplied values for fields
+// the API may omit on Read (e.g. empty arrays that the server encodes as
+// null) so `terraform plan` after `apply` doesn't produce spurious diffs.
 func maintenanceWindowToModel(ctx context.Context, w spork.MaintenanceWindow, fallback *MaintenanceWindowResourceModel, diags *diag.Diagnostics) MaintenanceWindowResourceModel {
 	model := MaintenanceWindowResourceModel{
 		ID:              types.StringValue(w.ID),
@@ -467,22 +511,39 @@ func maintenanceWindowToModel(ctx context.Context, w spork.MaintenanceWindow, fa
 		UpdatedAt:       types.StringValue(w.UpdatedAt),
 	}
 
-	// Collections
-	monIDs, d := types.SetValueFrom(ctx, types.StringType, w.MonitorIDs)
-	diags.Append(d...)
-	model.MonitorIDs = monIDs
+	// MonitorIDs — fall back to prior state when the API omits it (null set)
+	// so a user who configured ["m1"] doesn't see perpetual drift if the
+	// server encodes the empty case as null on Read.
+	if len(w.MonitorIDs) > 0 {
+		monIDs, d := types.SetValueFrom(ctx, types.StringType, w.MonitorIDs)
+		diags.Append(d...)
+		model.MonitorIDs = monIDs
+	} else if fallback != nil && !fallback.MonitorIDs.IsNull() && !fallback.MonitorIDs.IsUnknown() {
+		model.MonitorIDs = fallback.MonitorIDs
+	} else {
+		model.MonitorIDs = types.SetNull(types.StringType)
+	}
 
-	tags, d := types.SetValueFrom(ctx, types.StringType, w.TagSelectors)
-	diags.Append(d...)
-	model.TagSelectors = tags
+	// TagSelectors — same fallback pattern.
+	if len(w.TagSelectors) > 0 {
+		tags, d := types.SetValueFrom(ctx, types.StringType, w.TagSelectors)
+		diags.Append(d...)
+		model.TagSelectors = tags
+	} else if fallback != nil && !fallback.TagSelectors.IsNull() && !fallback.TagSelectors.IsUnknown() {
+		model.TagSelectors = fallback.TagSelectors
+	} else {
+		model.TagSelectors = types.SetNull(types.StringType)
+	}
 
+	// RecurrenceDays — same fallback pattern (already present before, but
+	// rewritten for consistency with the other two).
 	if len(w.RecurrenceDays) > 0 {
 		days := make([]int64, len(w.RecurrenceDays))
 		for i, d := range w.RecurrenceDays {
 			days[i] = int64(d)
 		}
-		list, dd := types.ListValueFrom(ctx, types.Int64Type, days)
-		diags.Append(dd...)
+		list, d := types.ListValueFrom(ctx, types.Int64Type, days)
+		diags.Append(d...)
 		model.RecurrenceDays = list
 	} else if fallback != nil && !fallback.RecurrenceDays.IsNull() && !fallback.RecurrenceDays.IsUnknown() {
 		model.RecurrenceDays = fallback.RecurrenceDays
