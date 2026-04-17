@@ -60,8 +60,9 @@ func (d *AlertChannelsDataSource) Schema(_ context.Context, _ datasource.SchemaR
 						},
 						"config": schema.MapAttribute{
 							Computed:    true,
+							Sensitive:   true,
 							ElementType: types.StringType,
-							Description: "Channel-specific configuration as key-value pairs.",
+							Description: "Channel-specific configuration as key-value pairs. Marked sensitive because it contains webhook URLs, integration keys, and bot tokens.",
 						},
 						"verified": schema.BoolAttribute{
 							Computed:    true,

@@ -15,6 +15,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+	"github.com/hashicorp/terraform-plugin-log/tflog"
 	"github.com/sporkops/spork-go"
 )
 
@@ -304,12 +305,23 @@ func alertChannelToModel(ctx context.Context, c spork.AlertChannel, fallback *Al
 	}
 
 	// Preserve state/plan values for config keys the API redacted on GET.
+	// The redaction heuristic is intentionally loose because the API masks
+	// differently across channel types (truncation, "..." placeholders,
+	// empty strings). If it ever stops detecting a real redaction we will
+	// silently corrupt state, so emit a debug log on every hit — a sudden
+	// change in hit rate is the earliest signal of an API format change.
 	if fallback != nil && !fallback.Config.IsNull() && !fallback.Config.IsUnknown() {
 		var fallbackConfig map[string]string
 		fallback.Config.ElementsAs(ctx, &fallbackConfig, false)
 		for k, v := range fallbackConfig {
 			existing, ok := configData[k]
-			if !ok || isRedacted(existing, v) {
+			if !ok {
+				tflog.Debug(ctx, "alert_channel config key missing from API response; restoring from state", map[string]any{"key": k})
+				configData[k] = v
+				continue
+			}
+			if isRedacted(existing, v) {
+				tflog.Debug(ctx, "alert_channel config key appears redacted; restoring from state", map[string]any{"key": k})
 				configData[k] = v
 			}
 		}
