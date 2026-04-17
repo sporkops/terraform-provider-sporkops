@@ -365,7 +365,7 @@ func (r *MaintenanceWindowResource) ModifyPlan(ctx context.Context, req resource
 		resp.Diagnostics.AddAttributeError(
 			path.Root("cancelled"),
 			"Cannot un-cancel a maintenance window",
-			"Cancellation is a one-way transition. To reinstate a cancelled window, destroy this resource and create a new one (e.g. `terraform taint spork_maintenance_window.example`).",
+			"Cancellation is a one-way transition. To reinstate a cancelled window, destroy this resource and create a new one — e.g. `terraform apply -replace=spork_maintenance_window.example`.",
 		)
 	}
 }
