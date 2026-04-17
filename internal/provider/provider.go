@@ -38,7 +38,7 @@ func (p *SporkProvider) Metadata(_ context.Context, _ provider.MetadataRequest, 
 
 func (p *SporkProvider) Schema(_ context.Context, _ provider.SchemaRequest, resp *provider.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		Description: "The Spork provider is used to manage uptime monitors, alert channels, and status pages via the Spork API.",
+		Description: "The Spork provider is used to manage uptime monitors, alert channels, maintenance windows, and status pages via the Spork API.",
 		Attributes: map[string]schema.Attribute{
 			"api_key": schema.StringAttribute{
 				Optional:    true,
@@ -113,6 +113,7 @@ func (p *SporkProvider) Resources(_ context.Context) []func() resource.Resource 
 		NewAlertChannelResource,
 		NewStatusPageResource,
 		NewMemberResource,
+		NewMaintenanceWindowResource,
 	}
 }
 
