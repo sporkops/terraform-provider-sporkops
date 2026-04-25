@@ -25,7 +25,8 @@ type SporkProvider struct {
 }
 
 type SporkProviderModel struct {
-	APIKey types.String `tfsdk:"api_key"`
+	APIKey         types.String `tfsdk:"api_key"`
+	OrganizationID types.String `tfsdk:"organization_id"`
 }
 
 func New(version string) func() provider.Provider {
@@ -49,6 +50,15 @@ func (p *SporkProvider) Schema(_ context.Context, _ provider.SchemaRequest, resp
 				Optional:    true,
 				Sensitive:   true,
 				Description: "Spork API key. Can also be set via the SPORK_API_KEY environment variable.",
+			},
+			"organization_id": schema.StringAttribute{
+				Optional: true,
+				Description: "Organization ID for org-scoped resources (monitors, alert channels, " +
+					"members, maintenance windows). Can also be set via the SPORK_ORG_ID " +
+					"environment variable. When omitted, the provider auto-resolves the " +
+					"organization by listing memberships for the API key — which works " +
+					"transparently for keys bound to a single organization. Set explicitly " +
+					"when the caller belongs to multiple organizations.",
 			},
 		},
 	}
@@ -99,11 +109,21 @@ func (p *SporkProvider) Configure(ctx context.Context, req provider.ConfigureReq
 		return
 	}
 
-	client := spork.NewClient(
+	orgID := strings.TrimSpace(os.Getenv("SPORK_ORG_ID"))
+	if !config.OrganizationID.IsNull() && !config.OrganizationID.IsUnknown() {
+		orgID = strings.TrimSpace(config.OrganizationID.ValueString())
+	}
+
+	clientOpts := []spork.Option{
 		spork.WithAPIKey(apiKey),
 		spork.WithBaseURL(baseURL),
-		spork.WithUserAgent("spork-terraform/"+p.version),
-	)
+		spork.WithUserAgent("spork-terraform/" + p.version),
+	}
+	if orgID != "" {
+		clientOpts = append(clientOpts, spork.WithOrganization(orgID))
+	}
+
+	client := spork.NewClient(clientOpts...)
 
 	resp.DataSourceData = client
 	resp.ResourceData = client

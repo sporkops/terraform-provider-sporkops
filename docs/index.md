@@ -66,3 +66,4 @@ resource "spork_alert_channel" "oncall" {
 ### Optional
 
 - `api_key` (String, Sensitive) — Spork API key. Can also be set via the `SPORK_API_KEY` environment variable.
+- `organization_id` (String) — Organization ID for org-scoped resources (monitors, alert channels, members, maintenance windows). Can also be set via the `SPORK_ORG_ID` environment variable. When omitted, the provider auto-resolves the organization by listing memberships for the API key — which works transparently for keys bound to a single organization. Set explicitly when the caller belongs to multiple organizations.

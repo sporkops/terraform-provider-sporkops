@@ -8,8 +8,14 @@ require (
 	github.com/hashicorp/terraform-plugin-go v0.25.0
 	github.com/hashicorp/terraform-plugin-log v0.9.0
 	github.com/hashicorp/terraform-plugin-testing v1.11.0
-	github.com/sporkops/spork-go v0.7.0
+	github.com/sporkops/spork-go v0.8.0
 )
+
+// Local development override — the SDK at v0.8.0 is the multi-org
+// release; while it is being prepared for tagging, the provider builds
+// against the working tree alongside this repo. Remove the replace
+// directive once spork-go v0.8.0 is published.
+replace github.com/sporkops/spork-go => ../spork-go
 
 require (
 	github.com/ProtonMail/go-crypto v1.1.0-alpha.2 // indirect
