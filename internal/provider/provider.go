@@ -71,9 +71,11 @@ func (p *SporkProvider) Configure(ctx context.Context, req provider.ConfigureReq
 		return
 	}
 
-	// If the API key is unknown (e.g., computed from another resource),
-	// we cannot configure the client yet. Return early to allow planning.
-	if config.APIKey.IsUnknown() {
+	// If either credential is unknown (e.g., computed from another
+	// resource), we cannot configure the client yet. Return early to
+	// allow planning. organization_id mirrors the api_key handling so
+	// chained provider configs behave consistently.
+	if config.APIKey.IsUnknown() || config.OrganizationID.IsUnknown() {
 		return
 	}
 
@@ -109,10 +111,7 @@ func (p *SporkProvider) Configure(ctx context.Context, req provider.ConfigureReq
 		return
 	}
 
-	orgID := strings.TrimSpace(os.Getenv("SPORK_ORG_ID"))
-	if !config.OrganizationID.IsNull() && !config.OrganizationID.IsUnknown() {
-		orgID = strings.TrimSpace(config.OrganizationID.ValueString())
-	}
+	orgID := resolveOrganizationID(config.OrganizationID, os.Getenv("SPORK_ORG_ID"))
 
 	clientOpts := []spork.Option{
 		spork.WithAPIKey(apiKey),
@@ -152,6 +151,23 @@ func (p *SporkProvider) DataSources(_ context.Context) []func() datasource.DataS
 		NewMaintenanceWindowDataSource,
 		NewMaintenanceWindowsDataSource,
 	}
+}
+
+// resolveOrganizationID derives the active organization ID from the
+// provider config and the SPORK_ORG_ID environment variable, with the
+// HCL value winning when both are set. An Unknown config value (e.g.
+// computed from another resource) is the early-return case in
+// Configure and never reaches here.
+//
+// Extracted so the precedence rule can be tested without spinning up
+// the framework's ConfigureRequest plumbing.
+func resolveOrganizationID(configValue types.String, envValue string) string {
+	if !configValue.IsNull() && !configValue.IsUnknown() {
+		if v := strings.TrimSpace(configValue.ValueString()); v != "" {
+			return v
+		}
+	}
+	return strings.TrimSpace(envValue)
 }
 
 // validateAPIBaseURL rejects SPORK_API_URL values that would leak the API key
