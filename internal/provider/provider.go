@@ -25,7 +25,8 @@ type SporkProvider struct {
 }
 
 type SporkProviderModel struct {
-	APIKey types.String `tfsdk:"api_key"`
+	APIKey         types.String `tfsdk:"api_key"`
+	OrganizationID types.String `tfsdk:"organization_id"`
 }
 
 func New(version string) func() provider.Provider {
@@ -50,6 +51,15 @@ func (p *SporkProvider) Schema(_ context.Context, _ provider.SchemaRequest, resp
 				Sensitive:   true,
 				Description: "Spork API key. Can also be set via the SPORK_API_KEY environment variable.",
 			},
+			"organization_id": schema.StringAttribute{
+				Optional: true,
+				Description: "Organization ID for org-scoped resources (monitors, alert channels, " +
+					"members, maintenance windows). Can also be set via the SPORK_ORG_ID " +
+					"environment variable. When omitted, the provider auto-resolves the " +
+					"organization by listing memberships for the API key — which works " +
+					"transparently for keys bound to a single organization. Set explicitly " +
+					"when the caller belongs to multiple organizations.",
+			},
 		},
 	}
 }
@@ -61,9 +71,11 @@ func (p *SporkProvider) Configure(ctx context.Context, req provider.ConfigureReq
 		return
 	}
 
-	// If the API key is unknown (e.g., computed from another resource),
-	// we cannot configure the client yet. Return early to allow planning.
-	if config.APIKey.IsUnknown() {
+	// If either credential is unknown (e.g., computed from another
+	// resource), we cannot configure the client yet. Return early to
+	// allow planning. organization_id mirrors the api_key handling so
+	// chained provider configs behave consistently.
+	if config.APIKey.IsUnknown() || config.OrganizationID.IsUnknown() {
 		return
 	}
 
@@ -99,11 +111,18 @@ func (p *SporkProvider) Configure(ctx context.Context, req provider.ConfigureReq
 		return
 	}
 
-	client := spork.NewClient(
+	orgID := resolveOrganizationID(config.OrganizationID, os.Getenv("SPORK_ORG_ID"))
+
+	clientOpts := []spork.Option{
 		spork.WithAPIKey(apiKey),
 		spork.WithBaseURL(baseURL),
-		spork.WithUserAgent("spork-terraform/"+p.version),
-	)
+		spork.WithUserAgent("spork-terraform/" + p.version),
+	}
+	if orgID != "" {
+		clientOpts = append(clientOpts, spork.WithOrganization(orgID))
+	}
+
+	client := spork.NewClient(clientOpts...)
 
 	resp.DataSourceData = client
 	resp.ResourceData = client
@@ -132,6 +151,23 @@ func (p *SporkProvider) DataSources(_ context.Context) []func() datasource.DataS
 		NewMaintenanceWindowDataSource,
 		NewMaintenanceWindowsDataSource,
 	}
+}
+
+// resolveOrganizationID derives the active organization ID from the
+// provider config and the SPORK_ORG_ID environment variable, with the
+// HCL value winning when both are set. An Unknown config value (e.g.
+// computed from another resource) is the early-return case in
+// Configure and never reaches here.
+//
+// Extracted so the precedence rule can be tested without spinning up
+// the framework's ConfigureRequest plumbing.
+func resolveOrganizationID(configValue types.String, envValue string) string {
+	if !configValue.IsNull() && !configValue.IsUnknown() {
+		if v := strings.TrimSpace(configValue.ValueString()); v != "" {
+			return v
+		}
+	}
+	return strings.TrimSpace(envValue)
 }
 
 // validateAPIBaseURL rejects SPORK_API_URL values that would leak the API key

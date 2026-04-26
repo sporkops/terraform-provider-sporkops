@@ -1,6 +1,71 @@
 package provider
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/hashicorp/terraform-plugin-framework/types"
+)
+
+func TestResolveOrganizationID(t *testing.T) {
+	cases := []struct {
+		name   string
+		config types.String
+		env    string
+		want   string
+	}{
+		{
+			name:   "config wins over env",
+			config: types.StringValue("org_from_hcl"),
+			env:    "org_from_env",
+			want:   "org_from_hcl",
+		},
+		{
+			name:   "config null falls back to env",
+			config: types.StringNull(),
+			env:    "org_from_env",
+			want:   "org_from_env",
+		},
+		{
+			name:   "config empty string falls back to env",
+			config: types.StringValue(""),
+			env:    "org_from_env",
+			want:   "org_from_env",
+		},
+		{
+			name:   "config whitespace-only falls back to env",
+			config: types.StringValue("   "),
+			env:    "org_from_env",
+			want:   "org_from_env",
+		},
+		{
+			name:   "neither set returns empty",
+			config: types.StringNull(),
+			env:    "",
+			want:   "",
+		},
+		{
+			name:   "env trimmed",
+			config: types.StringNull(),
+			env:    "  org_from_env  ",
+			want:   "org_from_env",
+		},
+		{
+			name:   "config trimmed",
+			config: types.StringValue("  org_from_hcl  "),
+			env:    "",
+			want:   "org_from_hcl",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := resolveOrganizationID(tc.config, tc.env)
+			if got != tc.want {
+				t.Errorf("resolveOrganizationID(%v, %q) = %q, want %q",
+					tc.config, tc.env, got, tc.want)
+			}
+		})
+	}
+}
 
 func TestValidateAPIBaseURL(t *testing.T) {
 	cases := []struct {
