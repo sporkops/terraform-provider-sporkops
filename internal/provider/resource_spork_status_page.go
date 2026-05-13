@@ -2,10 +2,12 @@ package provider
 
 import (
 	"context"
+	"fmt"
 	"regexp"
 
 	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/attr"
+	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
@@ -22,6 +24,7 @@ var (
 	_ resource.Resource                = &StatusPageResource{}
 	_ resource.ResourceWithConfigure   = &StatusPageResource{}
 	_ resource.ResourceWithImportState = &StatusPageResource{}
+	_ resource.ResourceWithModifyPlan  = &StatusPageResource{}
 )
 
 type StatusPageResource struct {
@@ -452,6 +455,109 @@ func (r *StatusPageResource) Delete(ctx context.Context, req resource.DeleteRequ
 
 func (r *StatusPageResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
 	resource.ImportStatePassthroughID(ctx, path.Root("id"), req, resp)
+}
+
+// ModifyPlan verifies that every `components[].monitor_id` in the plan
+// refers to a monitor in the same organization as this resource's
+// provider alias.
+//
+// Why plan-time: in multi-org setups (provider aliases per org), a
+// config can wire `provider = spork.acme` on a `spork_status_page`
+// and `provider = spork.widgets` on the referenced `spork_monitor`.
+// Without this check the plan looks clean and apply fails with a
+// 404 from the backend (which since the 2026-05 cross-org gate
+// now rejects component → monitor refs across tenants). Surfacing
+// the mismatch at plan-time is dramatically better UX.
+//
+// What we do: for each known monitor_id, call client.GetMonitor —
+// the SDK client is org-scoped, so a 404 means "not in this
+// organization" (whether the ID exists in another org or doesn't
+// exist at all is intentionally indistinguishable, mirroring the
+// backend's privacy posture). Unknown values (e.g. a monitor still
+// pending create in this plan, or a `for_each` over a computed
+// list) are skipped — they'll be re-evaluated on the second plan
+// or fail at apply if mis-wired.
+//
+// What we deliberately do NOT do: fail closed on transport errors.
+// A flaky plan run shouldn't block users; if the API is unreachable
+// the apply will hit the same condition and produce the canonical
+// error path. We emit a Warning instead so the user knows the
+// check was skipped.
+func (r *StatusPageResource) ModifyPlan(ctx context.Context, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse) {
+	// Skip on destroy plans (nothing to verify).
+	if req.Plan.Raw.IsNull() {
+		return
+	}
+	// Configure hasn't run yet — happens during certain framework probes.
+	if r.client == nil {
+		return
+	}
+
+	var plan StatusPageResourceModel
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	if plan.Components.IsNull() || plan.Components.IsUnknown() {
+		return
+	}
+
+	var components []StatusPageComponentModel
+	resp.Diagnostics.Append(plan.Components.ElementsAs(ctx, &components, false)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	resp.Diagnostics.Append(verifyComponentMonitorsSameOrg(ctx, r.client, components)...)
+}
+
+// verifyComponentMonitorsSameOrg is the same-org check pulled out so it can
+// be unit-tested against a stub Ping API without standing up the framework
+// ModifyPlan plumbing.
+//
+// Deduplicates monitor_ids so a config that reuses the same monitor across
+// components (e.g. one component per environment, all pointing at the same
+// uptime monitor) doesn't fan out to N identical API calls.
+func verifyComponentMonitorsSameOrg(ctx context.Context, client *spork.Client, components []StatusPageComponentModel) diag.Diagnostics {
+	var diags diag.Diagnostics
+	seen := make(map[string]struct{}, len(components))
+	for i, c := range components {
+		if c.MonitorID.IsNull() || c.MonitorID.IsUnknown() {
+			continue
+		}
+		id := c.MonitorID.ValueString()
+		if id == "" {
+			continue
+		}
+		if _, dup := seen[id]; dup {
+			continue
+		}
+		seen[id] = struct{}{}
+
+		_, err := client.GetMonitor(ctx, id)
+		if err == nil {
+			continue
+		}
+		if spork.IsNotFound(err) {
+			diags.AddAttributeError(
+				path.Root("components").AtListIndex(i).AtName("monitor_id"),
+				"Monitor not found in this organization",
+				fmt.Sprintf("monitor %q does not exist in the organization this provider is configured for. "+
+					"In a multi-org setup, make sure the status page's `provider = spork.<alias>` matches the alias "+
+					"that owns the monitor — cross-org component references are rejected by the API.", id),
+			)
+			continue
+		}
+		// Transient error — don't block the plan. Surface as a warning so
+		// the user can investigate if it sticks around.
+		diags.AddAttributeWarning(
+			path.Root("components").AtListIndex(i).AtName("monitor_id"),
+			"Could not verify monitor at plan time",
+			fmt.Sprintf("verifying monitor %q failed (%v). The plan-time same-org check is best-effort; the "+
+				"apply will hit the canonical backend response.", id, err),
+		)
+	}
+	return diags
 }
 
 // Conversion helpers
