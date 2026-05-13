@@ -42,6 +42,7 @@ type MaintenanceWindowResource struct {
 
 type MaintenanceWindowResourceModel struct {
 	ID                types.String `tfsdk:"id"`
+	OrganizationID    types.String `tfsdk:"organization_id"`
 	Name              types.String `tfsdk:"name"`
 	Description       types.String `tfsdk:"description"`
 	MonitorIDs        types.Set    `tfsdk:"monitor_ids"`
@@ -78,6 +79,13 @@ func (r *MaintenanceWindowResource) Schema(_ context.Context, _ resource.SchemaR
 			"id": schema.StringAttribute{
 				Computed:    true,
 				Description: "The unique identifier of the maintenance window.",
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.UseStateForUnknown(),
+				},
+			},
+			"organization_id": schema.StringAttribute{
+				Computed:    true,
+				Description: "ID of the organization that owns this maintenance window. Recorded at create time. Use the `ORG_ID:RESOURCE_ID` import form to pin a different org.",
 				PlanModifiers: []planmodifier.String{
 					stringplanmodifier.UseStateForUnknown(),
 				},
@@ -264,6 +272,9 @@ func (r *MaintenanceWindowResource) Create(ctx context.Context, req resource.Cre
 	}
 
 	state := maintenanceWindowToModel(ctx, *result, &plan, &resp.Diagnostics)
+	if orgID, orgErr := resolveCreateOrg(ctx, r.client); orgErr == nil && orgID != "" {
+		state.OrganizationID = types.StringValue(orgID)
+	}
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 
@@ -274,7 +285,7 @@ func (r *MaintenanceWindowResource) Read(ctx context.Context, req resource.ReadR
 		return
 	}
 
-	result, err := r.client.GetMaintenanceWindow(ctx, state.ID.ValueString())
+	result, err := clientForState(r.client, state.OrganizationID).GetMaintenanceWindow(ctx, state.ID.ValueString())
 	if err != nil {
 		if spork.IsNotFound(err) {
 			resp.State.RemoveResource(ctx)
@@ -285,6 +296,7 @@ func (r *MaintenanceWindowResource) Read(ctx context.Context, req resource.ReadR
 	}
 
 	newState := maintenanceWindowToModel(ctx, *result, &state, &resp.Diagnostics)
+	newState.OrganizationID = state.OrganizationID
 	resp.Diagnostics.Append(resp.State.Set(ctx, &newState)...)
 }
 
@@ -306,7 +318,8 @@ func (r *MaintenanceWindowResource) Update(ctx context.Context, req resource.Upd
 		return
 	}
 
-	result, err := r.client.UpdateMaintenanceWindow(ctx, state.ID.ValueString(), &apiW)
+	cli := clientForState(r.client, state.OrganizationID)
+	result, err := cli.UpdateMaintenanceWindow(ctx, state.ID.ValueString(), &apiW)
 	if err != nil {
 		addAPIError(&resp.Diagnostics, "Error updating maintenance window", err)
 		return
@@ -316,7 +329,7 @@ func (r *MaintenanceWindowResource) Update(ctx context.Context, req resource.Upd
 	stateCancelled := !state.Cancelled.IsNull() && state.Cancelled.ValueBool()
 	planCancelled := !plan.Cancelled.IsNull() && !plan.Cancelled.IsUnknown() && plan.Cancelled.ValueBool()
 	if planCancelled && !stateCancelled {
-		cancelled, err := r.client.CancelMaintenanceWindow(ctx, state.ID.ValueString())
+		cancelled, err := cli.CancelMaintenanceWindow(ctx, state.ID.ValueString())
 		if err != nil {
 			addAPIError(&resp.Diagnostics, "Error cancelling maintenance window", err)
 			return
@@ -325,6 +338,7 @@ func (r *MaintenanceWindowResource) Update(ctx context.Context, req resource.Upd
 	}
 
 	newState := maintenanceWindowToModel(ctx, *result, &plan, &resp.Diagnostics)
+	newState.OrganizationID = state.OrganizationID
 	resp.Diagnostics.Append(resp.State.Set(ctx, &newState)...)
 }
 
@@ -335,7 +349,7 @@ func (r *MaintenanceWindowResource) Delete(ctx context.Context, req resource.Del
 		return
 	}
 
-	err := r.client.DeleteMaintenanceWindow(ctx, state.ID.ValueString())
+	err := clientForState(r.client, state.OrganizationID).DeleteMaintenanceWindow(ctx, state.ID.ValueString())
 	if err != nil && !spork.IsNotFound(err) {
 		addAPIError(&resp.Diagnostics, "Error deleting maintenance window", err)
 	}
@@ -442,7 +456,7 @@ func (r *MaintenanceWindowResource) ValidateConfig(ctx context.Context, req reso
 }
 
 func (r *MaintenanceWindowResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
-	resource.ImportStatePassthroughID(ctx, path.Root("id"), req, resp)
+	handleOrgQualifiedImport(ctx, req, resp)
 }
 
 // maintenanceWindowFromModel serializes a Terraform model to the API request struct.

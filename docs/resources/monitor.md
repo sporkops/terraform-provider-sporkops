@@ -112,3 +112,17 @@ Monitors can be imported using their ID:
 ```shell
 terraform import spork_monitor.website mon_abc123
 ```
+
+Multi-org configs can pin the resource's tenancy at import time using
+the `ORG_ID:RESOURCE_ID` form. The org ID is recorded in the
+`organization_id` attribute, and every subsequent Read / Update /
+Delete routes through that org via `ForOrg` — so the resource stays
+addressable regardless of which org the provider alias is configured
+for:
+
+```shell
+terraform import spork_monitor.website org_8f4c2a91:mon_abc123
+```
+
+Useful for importing existing resources from another org without
+setting up a per-org provider alias first.

@@ -31,12 +31,13 @@ type AlertChannelResource struct {
 }
 
 type AlertChannelResourceModel struct {
-	ID       types.String `tfsdk:"id"`
-	Name     types.String `tfsdk:"name"`
-	Type     types.String `tfsdk:"type"`
-	Config   types.Map    `tfsdk:"config"`
-	Secret   types.String `tfsdk:"secret"`
-	Verified types.Bool   `tfsdk:"verified"`
+	ID             types.String `tfsdk:"id"`
+	OrganizationID types.String `tfsdk:"organization_id"`
+	Name           types.String `tfsdk:"name"`
+	Type           types.String `tfsdk:"type"`
+	Config         types.Map    `tfsdk:"config"`
+	Secret         types.String `tfsdk:"secret"`
+	Verified       types.Bool   `tfsdk:"verified"`
 }
 
 func NewAlertChannelResource() resource.Resource {
@@ -56,6 +57,13 @@ func (r *AlertChannelResource) Schema(_ context.Context, _ resource.SchemaReques
 				Computed:            true,
 				Description:         "The unique identifier of the alert channel.",
 				MarkdownDescription: "The unique identifier of the alert channel.",
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.UseStateForUnknown(),
+				},
+			},
+			"organization_id": schema.StringAttribute{
+				Computed:    true,
+				Description: "ID of the organization that owns this alert channel. Recorded at create time. Use the `ORG_ID:RESOURCE_ID` import form to pin a different org.",
 				PlanModifiers: []planmodifier.String{
 					stringplanmodifier.UseStateForUnknown(),
 				},
@@ -140,6 +148,9 @@ func (r *AlertChannelResource) Create(ctx context.Context, req resource.CreateRe
 	// On create the API returns the full response (including webhook secret).
 	// Pass plan as fallback so user-provided fields are preserved in state.
 	state := alertChannelToModel(ctx, *result, &plan, &resp.Diagnostics)
+	if orgID, orgErr := resolveCreateOrg(ctx, r.client); orgErr == nil && orgID != "" {
+		state.OrganizationID = types.StringValue(orgID)
+	}
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 
@@ -150,7 +161,7 @@ func (r *AlertChannelResource) Read(ctx context.Context, req resource.ReadReques
 		return
 	}
 
-	result, err := r.client.GetAlertChannel(ctx, state.ID.ValueString())
+	result, err := clientForState(r.client, state.OrganizationID).GetAlertChannel(ctx, state.ID.ValueString())
 	if err != nil {
 		if spork.IsNotFound(err) {
 			resp.State.RemoveResource(ctx)
@@ -162,6 +173,10 @@ func (r *AlertChannelResource) Read(ctx context.Context, req resource.ReadReques
 
 	// Pass current state so sensitive fields the API redacts are preserved.
 	newState := alertChannelToModel(ctx, *result, &state, &resp.Diagnostics)
+	// SDK AlertChannel struct doesn't expose organization_id yet (see the
+	// equivalent note on the monitor resource); preserve the pinned org
+	// across Read so org-qualified imports stay routed correctly.
+	newState.OrganizationID = state.OrganizationID
 	resp.Diagnostics.Append(resp.State.Set(ctx, &newState)...)
 }
 
@@ -182,7 +197,7 @@ func (r *AlertChannelResource) Update(ctx context.Context, req resource.UpdateRe
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	result, err := r.client.UpdateAlertChannel(ctx, state.ID.ValueString(), &apiChannel)
+	result, err := clientForState(r.client, state.OrganizationID).UpdateAlertChannel(ctx, state.ID.ValueString(), &apiChannel)
 	if err != nil {
 		addAPIError(&resp.Diagnostics, "Error updating alert channel", err)
 		return
@@ -191,6 +206,7 @@ func (r *AlertChannelResource) Update(ctx context.Context, req resource.UpdateRe
 	// Use plan as fallback for redacted config values; preserve secret from state.
 	newState := alertChannelToModel(ctx, *result, &plan, &resp.Diagnostics)
 	newState.Secret = state.Secret
+	newState.OrganizationID = state.OrganizationID
 	resp.Diagnostics.Append(resp.State.Set(ctx, &newState)...)
 }
 
@@ -201,7 +217,7 @@ func (r *AlertChannelResource) Delete(ctx context.Context, req resource.DeleteRe
 		return
 	}
 
-	err := r.client.DeleteAlertChannel(ctx, state.ID.ValueString())
+	err := clientForState(r.client, state.OrganizationID).DeleteAlertChannel(ctx, state.ID.ValueString())
 	if err != nil && !spork.IsNotFound(err) {
 		addAPIError(&resp.Diagnostics, "Error deleting alert channel", err)
 	}
@@ -251,7 +267,7 @@ func (r *AlertChannelResource) ValidateConfig(ctx context.Context, req resource.
 }
 
 func (r *AlertChannelResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
-	resource.ImportStatePassthroughID(ctx, path.Root("id"), req, resp)
+	handleOrgQualifiedImport(ctx, req, resp)
 }
 
 // Conversion helpers

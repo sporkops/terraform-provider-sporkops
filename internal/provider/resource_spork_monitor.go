@@ -37,6 +37,7 @@ type MonitorResource struct {
 
 type MonitorResourceModel struct {
 	ID              types.String `tfsdk:"id"`
+	OrganizationID  types.String `tfsdk:"organization_id"`
 	Target          types.String `tfsdk:"target"`
 	Name            types.String `tfsdk:"name"`
 	Type            types.String `tfsdk:"type"`
@@ -73,6 +74,13 @@ func (r *MonitorResource) Schema(_ context.Context, _ resource.SchemaRequest, re
 				Computed:            true,
 				Description:         "The unique identifier of the monitor.",
 				MarkdownDescription: "The unique identifier of the monitor.",
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.UseStateForUnknown(),
+				},
+			},
+			"organization_id": schema.StringAttribute{
+				Computed:    true,
+				Description: "ID of the organization that owns this monitor. Recorded at create time from the configured provider alias. Use the `ORG_ID:RESOURCE_ID` form of `terraform import` to pin a different org without reconfiguring the provider.",
 				PlanModifiers: []planmodifier.String{
 					stringplanmodifier.UseStateForUnknown(),
 				},
@@ -241,6 +249,10 @@ func (r *MonitorResource) Create(ctx context.Context, req resource.CreateRequest
 		return
 	}
 
+	// Resource creates always land on the provider's configured client.
+	// Cross-org create-then-attach is intentionally not a feature — the
+	// caller picks the org via `provider = spork.<alias>`, then the
+	// resource records its org for future Read/Update/Delete routing.
 	result, err := r.client.CreateMonitor(ctx, &apiMonitor)
 	if err != nil {
 		addAPIError(&resp.Diagnostics, "Error creating monitor", err)
@@ -248,6 +260,12 @@ func (r *MonitorResource) Create(ctx context.Context, req resource.CreateRequest
 	}
 
 	state := monitorToModel(ctx, *result, &resp.Diagnostics)
+	// Stamp the resolved org on state so future Read/Update/Delete are
+	// addressable via the resource's own organization_id, independent of
+	// the provider alias.
+	if orgID, orgErr := resolveCreateOrg(ctx, r.client); orgErr == nil && orgID != "" {
+		state.OrganizationID = types.StringValue(orgID)
+	}
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 
@@ -258,7 +276,7 @@ func (r *MonitorResource) Read(ctx context.Context, req resource.ReadRequest, re
 		return
 	}
 
-	result, err := r.client.GetMonitor(ctx, state.ID.ValueString())
+	result, err := clientForState(r.client, state.OrganizationID).GetMonitor(ctx, state.ID.ValueString())
 	if err != nil {
 		if spork.IsNotFound(err) {
 			resp.State.RemoveResource(ctx)
@@ -269,6 +287,13 @@ func (r *MonitorResource) Read(ctx context.Context, req resource.ReadRequest, re
 	}
 
 	newState := monitorToModel(ctx, *result, &resp.Diagnostics)
+	// The SDK Monitor struct doesn't carry organization_id yet (server
+	// returns it in JSON but the Go struct ignores unknown fields), so
+	// we preserve the value from prior state instead of letting Read
+	// blank it out. Once spork-go regenerates against the post-2026-05
+	// spec, this can be replaced by `newState.OrganizationID =
+	// types.StringValue(result.OrganizationID)`.
+	newState.OrganizationID = state.OrganizationID
 	resp.Diagnostics.Append(resp.State.Set(ctx, &newState)...)
 }
 
@@ -290,13 +315,15 @@ func (r *MonitorResource) Update(ctx context.Context, req resource.UpdateRequest
 		return
 	}
 
-	result, err := r.client.UpdateMonitor(ctx, state.ID.ValueString(), &apiMonitor)
+	result, err := clientForState(r.client, state.OrganizationID).UpdateMonitor(ctx, state.ID.ValueString(), &apiMonitor)
 	if err != nil {
 		addAPIError(&resp.Diagnostics, "Error updating monitor", err)
 		return
 	}
 
 	newState := monitorToModel(ctx, *result, &resp.Diagnostics)
+	// Preserve the org pin set at create/import time (see Read).
+	newState.OrganizationID = state.OrganizationID
 	resp.Diagnostics.Append(resp.State.Set(ctx, &newState)...)
 }
 
@@ -307,7 +334,7 @@ func (r *MonitorResource) Delete(ctx context.Context, req resource.DeleteRequest
 		return
 	}
 
-	err := r.client.DeleteMonitor(ctx, state.ID.ValueString())
+	err := clientForState(r.client, state.OrganizationID).DeleteMonitor(ctx, state.ID.ValueString())
 	if err != nil && !spork.IsNotFound(err) {
 		addAPIError(&resp.Diagnostics, "Error deleting monitor", err)
 	}
@@ -400,7 +427,7 @@ func (r *MonitorResource) ValidateConfig(ctx context.Context, req resource.Valid
 }
 
 func (r *MonitorResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
-	resource.ImportStatePassthroughID(ctx, path.Root("id"), req, resp)
+	handleOrgQualifiedImport(ctx, req, resp)
 }
 
 // Conversion helpers

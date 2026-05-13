@@ -85,3 +85,10 @@ Alert channels can be imported using their ID:
 ```shell
 terraform import spork_alert_channel.oncall ch_abc123
 ```
+
+Multi-org configs can pin the resource's tenancy at import time using
+the `ORG_ID:RESOURCE_ID` form — see the monitor resource for details:
+
+```shell
+terraform import spork_alert_channel.oncall org_8f4c2a91:ch_abc123
+```

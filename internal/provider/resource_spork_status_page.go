@@ -33,6 +33,7 @@ type StatusPageResource struct {
 
 type StatusPageResourceModel struct {
 	ID                      types.String `tfsdk:"id"`
+	OrganizationID          types.String `tfsdk:"organization_id"`
 	Name                    types.String `tfsdk:"name"`
 	Slug                    types.String `tfsdk:"slug"`
 	Components              types.List   `tfsdk:"components"`
@@ -100,6 +101,13 @@ func (r *StatusPageResource) Schema(_ context.Context, _ resource.SchemaRequest,
 			"id": schema.StringAttribute{
 				Computed:    true,
 				Description: "The unique identifier of the status page.",
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.UseStateForUnknown(),
+				},
+			},
+			"organization_id": schema.StringAttribute{
+				Computed:    true,
+				Description: "ID of the organization that owns this status page. Recorded at create time. Use the `ORG_ID:RESOURCE_ID` import form to pin a different org.",
 				PlanModifiers: []planmodifier.String{
 					stringplanmodifier.UseStateForUnknown(),
 				},
@@ -337,6 +345,9 @@ func (r *StatusPageResource) Create(ctx context.Context, req resource.CreateRequ
 	// Save state immediately so the resource is tracked even if the
 	// custom domain call below fails (prevents orphaned resources).
 	state := statusPageToModel(ctx, *result)
+	if orgID, orgErr := resolveCreateOrg(ctx, r.client); orgErr == nil && orgID != "" {
+		state.OrganizationID = types.StringValue(orgID)
+	}
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
@@ -356,6 +367,9 @@ func (r *StatusPageResource) Create(ctx context.Context, req resource.CreateRequ
 			return
 		}
 		state = statusPageToModel(ctx, *result)
+		if orgID, orgErr := resolveCreateOrg(ctx, r.client); orgErr == nil && orgID != "" {
+			state.OrganizationID = types.StringValue(orgID)
+		}
 		resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 	}
 }
@@ -367,7 +381,7 @@ func (r *StatusPageResource) Read(ctx context.Context, req resource.ReadRequest,
 		return
 	}
 
-	result, err := r.client.GetStatusPage(ctx, state.ID.ValueString())
+	result, err := clientForState(r.client, state.OrganizationID).GetStatusPage(ctx, state.ID.ValueString())
 	if err != nil {
 		if spork.IsNotFound(err) {
 			resp.State.RemoveResource(ctx)
@@ -380,6 +394,8 @@ func (r *StatusPageResource) Read(ctx context.Context, req resource.ReadRequest,
 	newState := statusPageToModel(ctx, *result)
 	// Preserve password from state — the API never returns it
 	newState.Password = state.Password
+	// Preserve the org pin (see equivalent note on the monitor resource).
+	newState.OrganizationID = state.OrganizationID
 	resp.Diagnostics.Append(resp.State.Set(ctx, &newState)...)
 }
 
@@ -398,7 +414,8 @@ func (r *StatusPageResource) Update(ctx context.Context, req resource.UpdateRequ
 
 	apiPage := statusPageFromModel(ctx, plan)
 
-	result, err := r.client.UpdateStatusPage(ctx, state.ID.ValueString(), &apiPage)
+	cli := clientForState(r.client, state.OrganizationID)
+	result, err := cli.UpdateStatusPage(ctx, state.ID.ValueString(), &apiPage)
 	if err != nil {
 		addAPIError(&resp.Diagnostics, "Error updating status page", err)
 		return
@@ -414,21 +431,21 @@ func (r *StatusPageResource) Update(ctx context.Context, req resource.UpdateRequ
 	if oldDomain != newDomain {
 		if oldDomain != "" && newDomain == "" {
 			// Remove custom domain
-			err := r.client.RemoveCustomDomain(ctx, result.ID)
+			err := cli.RemoveCustomDomain(ctx, result.ID)
 			if err != nil {
 				addAPIError(&resp.Diagnostics, "Error removing custom domain", err)
 				return
 			}
 		} else if newDomain != "" {
 			// Set (or change) custom domain
-			err := r.client.SetCustomDomain(ctx, result.ID, newDomain)
+			err := cli.SetCustomDomain(ctx, result.ID, newDomain)
 			if err != nil {
 				addAPIError(&resp.Diagnostics, "Error setting custom domain", err)
 				return
 			}
 		}
 		// Re-read to get updated domain state
-		result, err = r.client.GetStatusPage(ctx, result.ID)
+		result, err = cli.GetStatusPage(ctx, result.ID)
 		if err != nil {
 			addAPIError(&resp.Diagnostics, "Error reading status page after domain change", err)
 			return
@@ -437,6 +454,7 @@ func (r *StatusPageResource) Update(ctx context.Context, req resource.UpdateRequ
 
 	newState := statusPageToModel(ctx, *result)
 	newState.Password = plan.Password
+	newState.OrganizationID = state.OrganizationID
 	resp.Diagnostics.Append(resp.State.Set(ctx, &newState)...)
 }
 
@@ -447,14 +465,14 @@ func (r *StatusPageResource) Delete(ctx context.Context, req resource.DeleteRequ
 		return
 	}
 
-	err := r.client.DeleteStatusPage(ctx, state.ID.ValueString())
+	err := clientForState(r.client, state.OrganizationID).DeleteStatusPage(ctx, state.ID.ValueString())
 	if err != nil && !spork.IsNotFound(err) {
 		addAPIError(&resp.Diagnostics, "Error deleting status page", err)
 	}
 }
 
 func (r *StatusPageResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
-	resource.ImportStatePassthroughID(ctx, path.Root("id"), req, resp)
+	handleOrgQualifiedImport(ctx, req, resp)
 }
 
 // ModifyPlan verifies that every `components[].monitor_id` in the plan
