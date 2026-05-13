@@ -202,7 +202,7 @@ func (r *MemberResource) Read(ctx context.Context, req resource.ReadRequest, res
 
 	newState := MemberResourceModel{
 		ID:             types.StringValue(found.ID),
-		OrganizationID: state.OrganizationID,
+		OrganizationID: healOrganizationID(ctx, r.client, state.OrganizationID),
 		Email:          types.StringValue(found.Email),
 		Role:           types.StringValue(found.Role),
 		Status:         types.StringValue(found.Status),

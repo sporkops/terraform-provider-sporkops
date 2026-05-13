@@ -395,7 +395,7 @@ func (r *StatusPageResource) Read(ctx context.Context, req resource.ReadRequest,
 	// Preserve password from state — the API never returns it
 	newState.Password = state.Password
 	// Preserve the org pin (see equivalent note on the monitor resource).
-	newState.OrganizationID = state.OrganizationID
+	newState.OrganizationID = healOrganizationID(ctx, r.client, state.OrganizationID)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &newState)...)
 }
 
@@ -454,7 +454,7 @@ func (r *StatusPageResource) Update(ctx context.Context, req resource.UpdateRequ
 
 	newState := statusPageToModel(ctx, *result)
 	newState.Password = plan.Password
-	newState.OrganizationID = state.OrganizationID
+	newState.OrganizationID = healOrganizationID(ctx, r.client, state.OrganizationID)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &newState)...)
 }
 

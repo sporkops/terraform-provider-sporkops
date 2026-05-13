@@ -296,7 +296,7 @@ func (r *MaintenanceWindowResource) Read(ctx context.Context, req resource.ReadR
 	}
 
 	newState := maintenanceWindowToModel(ctx, *result, &state, &resp.Diagnostics)
-	newState.OrganizationID = state.OrganizationID
+	newState.OrganizationID = healOrganizationID(ctx, r.client, state.OrganizationID)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &newState)...)
 }
 
@@ -338,7 +338,7 @@ func (r *MaintenanceWindowResource) Update(ctx context.Context, req resource.Upd
 	}
 
 	newState := maintenanceWindowToModel(ctx, *result, &plan, &resp.Diagnostics)
-	newState.OrganizationID = state.OrganizationID
+	newState.OrganizationID = healOrganizationID(ctx, r.client, state.OrganizationID)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &newState)...)
 }
 

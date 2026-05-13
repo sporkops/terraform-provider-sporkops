@@ -110,3 +110,27 @@ func resolveCreateOrg(ctx context.Context, c *spork.Client) (string, error) {
 	}
 	return c.OrganizationID(ctx)
 }
+
+// healOrganizationID returns the org ID to record in newState. It
+// solves the upgrade path for resources created or imported before
+// `organization_id` was added to the schema: their stored value is
+// null, which without intervention would surface as a permanent
+// "(known after apply)" diff on every plan post-upgrade.
+//
+// When the state value is non-empty it's preserved verbatim (this
+// is the dominant case — newly-created resources and org-qualified
+// imports both populate it). When state is null/empty, we ask the
+// SDK for the active org and use that. If the SDK can't tell us
+// either (no auth, network failure), we leave the value null;
+// the permadiff is preferable to dropping the upgrade entirely.
+func healOrganizationID(ctx context.Context, c *spork.Client, state types.String) types.String {
+	if !state.IsNull() && !state.IsUnknown() {
+		if strings.TrimSpace(state.ValueString()) != "" {
+			return state
+		}
+	}
+	if id, err := resolveCreateOrg(ctx, c); err == nil && id != "" {
+		return types.StringValue(id)
+	}
+	return state
+}

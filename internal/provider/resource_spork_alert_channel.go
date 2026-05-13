@@ -176,7 +176,7 @@ func (r *AlertChannelResource) Read(ctx context.Context, req resource.ReadReques
 	// SDK AlertChannel struct doesn't expose organization_id yet (see the
 	// equivalent note on the monitor resource); preserve the pinned org
 	// across Read so org-qualified imports stay routed correctly.
-	newState.OrganizationID = state.OrganizationID
+	newState.OrganizationID = healOrganizationID(ctx, r.client, state.OrganizationID)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &newState)...)
 }
 
@@ -206,7 +206,7 @@ func (r *AlertChannelResource) Update(ctx context.Context, req resource.UpdateRe
 	// Use plan as fallback for redacted config values; preserve secret from state.
 	newState := alertChannelToModel(ctx, *result, &plan, &resp.Diagnostics)
 	newState.Secret = state.Secret
-	newState.OrganizationID = state.OrganizationID
+	newState.OrganizationID = healOrganizationID(ctx, r.client, state.OrganizationID)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &newState)...)
 }
 

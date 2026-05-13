@@ -106,6 +106,63 @@ func TestClientForState_NonEmptyRoutesThroughForOrg(t *testing.T) {
 	}
 }
 
+// healOrganizationID closes the upgrade path for resources that pre-date
+// the organization_id schema attribute: their stored value is null, which
+// without this helper would surface as a permanent "(known after apply)"
+// diff on every plan. These tests pin the three branches:
+//
+//   - non-empty state → preserve verbatim (no SDK call, dominant case)
+//   - null state, healable → fall back to the SDK's resolved org
+//   - null state, SDK unavailable → preserve null (graceful failure)
+
+func TestHealOrganizationID_NonEmptyStatePreservedVerbatim(t *testing.T) {
+	// No stub server — if Read calls into the SDK with a non-empty
+	// state, the test would fail with a connection error. The null
+	// stub URL guarantees the fast path is exercised.
+	c := spork.NewClient(
+		spork.WithAPIKey("sk_test"),
+		spork.WithOrganization("org_provider"),
+		spork.WithBaseURL("http://127.0.0.1:1/never-called"),
+	)
+	in := types.StringValue("org_state_pinned")
+	got := healOrganizationID(context.Background(), c, in)
+	if got != in {
+		t.Errorf("expected state preserved verbatim, got %v", got)
+	}
+}
+
+func TestHealOrganizationID_NullStateFillsFromSDK(t *testing.T) {
+	// The SDK exposes OrganizationID() which short-circuits when
+	// WithOrganization was set at construction — no network needed.
+	c := spork.NewClient(
+		spork.WithAPIKey("sk_test"),
+		spork.WithOrganization("org_resolved"),
+	)
+	cases := map[string]types.String{
+		"null":            types.StringNull(),
+		"empty string":    types.StringValue(""),
+		"only whitespace": types.StringValue("   "),
+	}
+	for name, in := range cases {
+		t.Run(name, func(t *testing.T) {
+			got := healOrganizationID(context.Background(), c, in)
+			if got.IsNull() || got.ValueString() != "org_resolved" {
+				t.Errorf("expected fill with %q, got %v", "org_resolved", got)
+			}
+		})
+	}
+}
+
+func TestHealOrganizationID_SDKFailureLeavesNull(t *testing.T) {
+	// Nil client makes resolveCreateOrg return an error; healed value
+	// stays at the input null/empty. The permadiff is preferable to
+	// dropping the upgrade with a 500 from a transient resolver error.
+	got := healOrganizationID(context.Background(), nil, types.StringNull())
+	if !got.IsNull() {
+		t.Errorf("expected null on SDK failure, got %v", got)
+	}
+}
+
 func TestClientForState_NilClientReturnsNil(t *testing.T) {
 	// Defensive: framework probes can land here before Configure runs.
 	// Returning nil keeps the helper safe to call unconditionally; the

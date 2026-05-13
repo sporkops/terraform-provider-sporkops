@@ -288,12 +288,14 @@ func (r *MonitorResource) Read(ctx context.Context, req resource.ReadRequest, re
 
 	newState := monitorToModel(ctx, *result, &resp.Diagnostics)
 	// The SDK Monitor struct doesn't carry organization_id yet (server
-	// returns it in JSON but the Go struct ignores unknown fields), so
-	// we preserve the value from prior state instead of letting Read
-	// blank it out. Once spork-go regenerates against the post-2026-05
-	// spec, this can be replaced by `newState.OrganizationID =
-	// types.StringValue(result.OrganizationID)`.
-	newState.OrganizationID = state.OrganizationID
+	// returns it in JSON but the Go decoder drops unknown fields).
+	// healOrganizationID preserves a non-empty state value verbatim and
+	// fills empty state from the SDK's resolved org — that covers the
+	// upgrade path for resources created/imported before this attribute
+	// existed (otherwise they'd show a permanent "(known after apply)"
+	// diff on every plan). When spork-go regenerates against the
+	// post-2026-05 spec this can be `types.StringValue(result.OrganizationID)`.
+	newState.OrganizationID = healOrganizationID(ctx, r.client, state.OrganizationID)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &newState)...)
 }
 
@@ -322,8 +324,9 @@ func (r *MonitorResource) Update(ctx context.Context, req resource.UpdateRequest
 	}
 
 	newState := monitorToModel(ctx, *result, &resp.Diagnostics)
-	// Preserve the org pin set at create/import time (see Read).
-	newState.OrganizationID = state.OrganizationID
+	// Preserve the org pin set at create/import time (or heal it if
+	// the resource pre-dates the attribute) — see Read.
+	newState.OrganizationID = healOrganizationID(ctx, r.client, state.OrganizationID)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &newState)...)
 }
 
