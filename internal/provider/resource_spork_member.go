@@ -5,7 +5,6 @@ import (
 	"regexp"
 
 	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
-	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
@@ -27,12 +26,13 @@ type MemberResource struct {
 }
 
 type MemberResourceModel struct {
-	ID        types.String `tfsdk:"id"`
-	Email     types.String `tfsdk:"email"`
-	Role      types.String `tfsdk:"role"`
-	Status    types.String `tfsdk:"status"`
-	CreatedAt types.String `tfsdk:"created_at"`
-	UpdatedAt types.String `tfsdk:"updated_at"`
+	ID             types.String `tfsdk:"id"`
+	OrganizationID types.String `tfsdk:"organization_id"`
+	Email          types.String `tfsdk:"email"`
+	Role           types.String `tfsdk:"role"`
+	Status         types.String `tfsdk:"status"`
+	CreatedAt      types.String `tfsdk:"created_at"`
+	UpdatedAt      types.String `tfsdk:"updated_at"`
 }
 
 func NewMemberResource() resource.Resource {
@@ -63,6 +63,13 @@ func (r *MemberResource) Schema(_ context.Context, _ resource.SchemaRequest, res
 				Computed:            true,
 				Description:         "The unique identifier of the member.",
 				MarkdownDescription: "The unique identifier of the member.",
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.UseStateForUnknown(),
+				},
+			},
+			"organization_id": schema.StringAttribute{
+				Computed:    true,
+				Description: "ID of the organization that owns this membership. Recorded at create time. Use the `ORG_ID:RESOURCE_ID` import form to pin a different org.",
 				PlanModifiers: []planmodifier.String{
 					stringplanmodifier.UseStateForUnknown(),
 				},
@@ -160,6 +167,9 @@ func (r *MemberResource) Create(ctx context.Context, req resource.CreateRequest,
 		CreatedAt: types.StringValue(result.CreatedAt.String()),
 		UpdatedAt: types.StringValue(result.UpdatedAt.String()),
 	}
+	if orgID, orgErr := resolveCreateOrg(ctx, r.client); orgErr == nil && orgID != "" {
+		state.OrganizationID = types.StringValue(orgID)
+	}
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
@@ -171,7 +181,7 @@ func (r *MemberResource) Read(ctx context.Context, req resource.ReadRequest, res
 		return
 	}
 
-	members, err := r.client.ListMembers(ctx)
+	members, err := clientForState(r.client, state.OrganizationID).ListMembers(ctx)
 	if err != nil {
 		addAPIError(&resp.Diagnostics, "Error listing members", err)
 		return
@@ -191,12 +201,13 @@ func (r *MemberResource) Read(ctx context.Context, req resource.ReadRequest, res
 	}
 
 	newState := MemberResourceModel{
-		ID:        types.StringValue(found.ID),
-		Email:     types.StringValue(found.Email),
-		Role:      types.StringValue(found.Role),
-		Status:    types.StringValue(found.Status),
-		CreatedAt: types.StringValue(found.CreatedAt.String()),
-		UpdatedAt: types.StringValue(found.UpdatedAt.String()),
+		ID:             types.StringValue(found.ID),
+		OrganizationID: healOrganizationID(ctx, r.client, state.OrganizationID),
+		Email:          types.StringValue(found.Email),
+		Role:           types.StringValue(found.Role),
+		Status:         types.StringValue(found.Status),
+		CreatedAt:      types.StringValue(found.CreatedAt.String()),
+		UpdatedAt:      types.StringValue(found.UpdatedAt.String()),
 	}
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &newState)...)
@@ -218,12 +229,12 @@ func (r *MemberResource) Delete(ctx context.Context, req resource.DeleteRequest,
 		return
 	}
 
-	err := r.client.RemoveMember(ctx, state.ID.ValueString())
+	err := clientForState(r.client, state.OrganizationID).RemoveMember(ctx, state.ID.ValueString())
 	if err != nil && !spork.IsNotFound(err) {
 		addAPIError(&resp.Diagnostics, "Error removing member", err)
 	}
 }
 
 func (r *MemberResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
-	resource.ImportStatePassthroughID(ctx, path.Root("id"), req, resp)
+	handleOrgQualifiedImport(ctx, req, resp)
 }

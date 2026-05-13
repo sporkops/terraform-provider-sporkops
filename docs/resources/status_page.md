@@ -97,3 +97,10 @@ Status pages can be imported by their ID:
 ```shell
 terraform import spork_status_page.main sp_abc123
 ```
+
+Multi-org configs can pin the resource's tenancy at import time using
+the `ORG_ID:RESOURCE_ID` form — see the monitor resource for details:
+
+```shell
+terraform import spork_status_page.main org_8f4c2a91:sp_abc123
+```
